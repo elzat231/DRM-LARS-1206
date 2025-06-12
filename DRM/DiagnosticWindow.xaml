@@ -1,0 +1,123 @@
+﻿<Window x:Class="XPlaneActivator.DiagnosticWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="System Diagnostic Report" Height="700" Width="900"
+        ResizeMode="CanResize" WindowStartupLocation="CenterOwner"
+        Background="#FF2D2D30" Foreground="White">
+
+    <Window.Resources>
+        <Style x:Key="CategoryHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#FF007ACC"/>
+            <Setter Property="Margin" Value="0,10,0,5"/>
+        </Style>
+
+        <Style x:Key="TestResult" TargetType="Border">
+            <Setter Property="Margin" Value="20,2"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style x:Key="PassedResult" TargetType="Border" BasedOn="{StaticResource TestResult}">
+            <Setter Property="Background" Value="#FF1B4D1B"/>
+            <Setter Property="BorderBrush" Value="#FF4CAF50"/>
+        </Style>
+
+        <Style x:Key="WarningResult" TargetType="Border" BasedOn="{StaticResource TestResult}">
+            <Setter Property="Background" Value="#FF4D3D1B"/>
+            <Setter Property="BorderBrush" Value="#FFFF9800"/>
+        </Style>
+
+        <Style x:Key="FailedResult" TargetType="Border" BasedOn="{StaticResource TestResult}">
+            <Setter Property="Background" Value="#FF4D1B1B"/>
+            <Setter Property="BorderBrush" Value="#FFF44336"/>
+        </Style>
+
+
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title and Summary -->
+        <Border Grid.Row="0" Background="#FF1E1E1E" Padding="20">
+            <StackPanel>
+                <TextBlock Text="System Diagnostic Report" FontSize="24" FontWeight="Bold" 
+                          Foreground="#FF007ACC" HorizontalAlignment="Center"/>
+
+                <Grid Margin="0,15,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                        <TextBlock Text="Total Tests" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="lblTotalTests" Text="0" FontSize="20" FontWeight="Bold" 
+                                  Foreground="White" HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                        <TextBlock Text="Passed" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="lblPassedTests" Text="0" FontSize="20" FontWeight="Bold" 
+                                  Foreground="#FF4CAF50" HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                        <TextBlock Text="Warning" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="lblWarningTests" Text="0" FontSize="20" FontWeight="Bold" 
+                                  Foreground="#FFFF9800" HorizontalAlignment="Center"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                        <TextBlock Text="Failed" FontSize="12" Opacity="0.7" HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="lblFailedTests" Text="0" FontSize="20" FontWeight="Bold" 
+                                  Foreground="#FFF44336" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+
+                <Border Margin="0,15,0,0" Padding="10" CornerRadius="5">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="#FF1B4D1B"/>
+                            <Setter Property="BorderBrush" Value="#FF4CAF50"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <TextBlock Text="Overall Status: " FontSize="14" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="lblOverallStatus" Text="Evaluating..." FontSize="14" FontWeight="Bold" 
+                                  VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- Detailed Results -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="10">
+            <StackPanel x:Name="spDiagnosticResults">
+                <!-- Dynamically generated diagnostic results will be displayed here -->
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Bottom Buttons -->
+        <Border Grid.Row="2" Background="#FF1E1E1E" Padding="20,10">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="btnSaveReport" Content="Save Report" Width="100" Height="30" 
+                        Background="#FF007ACC" Foreground="White" BorderThickness="0"
+                        Margin="0,0,10,0" Click="BtnSaveReport_Click"/>
+                <Button x:Name="btnClose" Content="Close" Width="80" Height="30" 
+                        Background="#FF555555" Foreground="White" BorderThickness="0"
+                        Click="BtnClose_Click"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

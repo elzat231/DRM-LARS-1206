@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  
+  <!-- Application -->
+  <data name="AppTitle" xml:space="preserve">
+    <value>X-Plane DRM Activator</value>
+  </data>
+  
+  <!-- Main Window UI -->
+  <data name="ActivationCode" xml:space="preserve">
+    <value>Activation Code</value>
+  </data>
+  <data name="EnterActivationCode" xml:space="preserve">
+    <value>Enter your activation code</value>
+  </data>
+  <data name="ActivateButton" xml:space="preserve">
+    <value>Activate Online</value>
+  </data>
+  <data name="ActivatingButton" xml:space="preserve">
+    <value>Activating...</value>
+  </data>
+  <data name="DeactivateButton" xml:space="preserve">
+    <value>Deactivate</value>
+  </data>
+  <data name="DiagnosticButton" xml:space="preserve">
+    <value>System Diagnostic</value>
+  </data>
+  
+  <!-- Status -->
+  <data name="Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="StatusNotActivated" xml:space="preserve">
+    <value>Not Activated</value>
+  </data>
+  <data name="StatusActivated" xml:space="preserve">
+    <value>Activated</value>
+  </data>
+  <data name="StatusError" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  
+  <!-- Network Status -->
+  <data name="NetworkStatus" xml:space="preserve">
+    <value>Network Status</value>
+  </data>
+  <data name="NetworkOnline" xml:space="preserve">
+    <value>Online</value>
+  </data>
+  <data name="NetworkOffline" xml:space="preserve">
+    <value>Offline</value>
+  </data>
+  <data name="NetworkError" xml:space="preserve">
+    <value>Network Error</value>
+  </data>
+  
+  <!-- Virtual File System -->
+  <data name="VirtualFileSystem" xml:space="preserve">
+    <value>Virtual File System</value>
+  </data>
+  <data name="VFSMounted" xml:space="preserve">
+    <value>Mounted</value>
+  </data>
+  <data name="VFSNotMounted" xml:space="preserve">
+    <value>Not Mounted</value>
+  </data>
+  
+  <!-- Connection -->
+  <data name="Connection" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="ConnectionOnline" xml:space="preserve">
+    <value>Online</value>
+  </data>
+  <data name="ConnectionOffline" xml:space="preserve">
+    <value>Offline</value>
+  </data>
+  <data name="ConnectionError" xml:space="preserve">
+    <value>Connection Error</value>
+  </data>
+  
+  <!-- Messages -->
+  <data name="InputRequired" xml:space="preserve">
+    <value>Input Required</value>
+  </data>
+  <data name="EnterActivationCodeMessage" xml:space="preserve">
+    <value>Please enter your activation code!</value>
+  </data>
+  <data name="ActivationComplete" xml:space="preserve">
+    <value>Activation Complete</value>
+  </data>
+  <data name="ActivationSuccessMessage" xml:space="preserve">
+    <value>Activation successful! Virtual file system is ready. You can now start X-Plane.</value>
+  </data>
+  <data name="ActivationFailed" xml:space="preserve">
+    <value>Activation Failed</value>
+  </data>
+  <data name="NetworkTimeout" xml:space="preserve">
+    <value>Network Timeout</value>
+  </data>
+  <data name="NetworkTimeoutMessage" xml:space="preserve">
+    <value>Network request timed out. Please check your internet connection and try again.</value>
+  </data>
+  <data name="ActivationError" xml:space="preserve">
+    <value>Activation Error</value>
+  </data>
+  <data name="DeactivationComplete" xml:space="preserve">
+    <value>Deactivation Complete</value>
+  </data>
+  <data name="DeactivationSuccessMessage" xml:space="preserve">
+    <value>Deactivation successful! Virtual file system has been unmounted.</value>
+  </data>
+  
+  <!-- Processing Messages -->
+  <data name="StartingActivation" xml:space="preserve">
+    <value>Starting activation process...</value>
+  </data>
+  <data name="ConnectingToServer" xml:space="preserve">
+    <value>Connecting to activation server...</value>
+  </data>
+  <data name="SendingActivationRequest" xml:space="preserve">
+    <value>Sending activation request...</value>
+  </data>
+  <data name="ProcessingServerResponse" xml:space="preserve">
+    <value>Processing server response...</value>
+  </data>
+  <data name="OnlineActivationSuccess" xml:space="preserve">
+    <value>Online activation successful</value>
+  </data>
+  <data name="ActivationSuccessful" xml:space="preserve">
+    <value>Activation successful - Virtual file system ready</value>
+  </data>
+  <data name="ActivationCompleted" xml:space="preserve">
+    <value>Activation completed successfully</value>
+  </data>
+  <data name="DecryptingData" xml:space="preserve">
+    <value>Decrypting activation data...</value>
+  </data>
+  <data name="MountingVFS" xml:space="preserve">
+    <value>Mounting virtual file system...</value>
+  </data>
+  <data name="VFSMountSuccess" xml:space="preserve">
+    <value>Virtual file system mounted successfully</value>
+  </data>
+  <data name="DeactivatingStatus" xml:space="preserve">
+    <value>Deactivating...</value>
+  </data>
+  <data name="DeactivationSuccessful" xml:space="preserve">
+    <value>Deactivation successful</value>
+  </data>
+  <data name="DeactivationCompleted" xml:space="preserve">
+    <value>Deactivation completed</value>
+  </data>
+  <data name="UnmountingVFS" xml:space="preserve">
+    <value>Unmounting virtual file system...</value>
+  </data>
+  <data name="VFSUnmountSuccess" xml:space="preserve">
+    <value>Virtual file system unmounted successfully</value>
+  </data>
+  
+  <!-- Fallback messages -->
+  <data name="TryingOfflineActivation" xml:space="preserve">
+    <value>Trying offline activation...</value>
+  </data>
+  <data name="TryingOfflineMode" xml:space="preserve">
+    <value>Trying offline mode...</value>
+  </data>
+  <data name="ActivationCodeDecryptionFailed" xml:space="preserve">
+    <value>Activation code decryption failed. Please check your activation code.</value>
+  </data>
+  <data name="InvalidServerResponse" xml:space="preserve">
+    <value>Invalid server response format</value>
+  </data>
+  <data name="ActivationSuccessWithoutToken" xml:space="preserve">
+    <value>Activation successful but no token received</value>
+  </data>
+  <data name="ConnectionTimeout" xml:space="preserve">
+    <value>Connection timeout</value>
+  </data>
+  
+  <!-- Error Messages with Formatting -->
+  <data name="OnlineActivationFailed" xml:space="preserve">
+    <value>Online activation failed: {0}</value>
+  </data>
+  <data name="NetworkErrorMessage" xml:space="preserve">
+    <value>Network error: {0}</value>
+  </data>
+  <data name="ActivationErrorMessage" xml:space="preserve">
+    <value>Activation error: {0}</value>
+  </data>
+  <data name="DataDecryptionSuccess" xml:space="preserve">
+    <value>Data decryption successful, size: {0} bytes</value>
+  </data>
+  <data name="StartingActivationWithCode" xml:space="preserve">
+    <value>Starting activation with code: {0}...</value>
+  </data>
+  <data name="NetworkRequestFailed" xml:space="preserve">
+    <value>Network request failed: {0}</value>
+  </data>
+  <data name="OnlineActivationException" xml:space="preserve">
+    <value>Online activation exception: {0}</value>
+  </data>
+  <data name="ActivationCodeProcessingException" xml:space="preserve">
+    <value>Activation code processing exception: {0}</value>
+  </data>
+  
+  <!-- Generic -->
+  <data name="OK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Yes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="No" xml:space="preserve">
+    <value>No</value>
+  </data>
+</root>

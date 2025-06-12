@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+
+     <PackageReference Include="System.ServiceProcess.ServiceController" Version="7.0.0" />
+
+    <PackageReference Include="System.Text.Json" Version="9.0.5" />
+    <!-- 虚拟文件系统 -->
+    <PackageReference Include="DokanNet" Version="2.3.0.1" />
+    
+    <!-- 日志记录 -->
+    <PackageReference Include="NLog" Version="5.5.0" />
+    
+    <!-- 系统管理 -->
+    <PackageReference Include="System.Management" Version="9.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="app.manifest" />
+  </ItemGroup>
+
+</Project>
