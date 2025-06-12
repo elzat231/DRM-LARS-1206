@@ -13,13 +13,13 @@
      <PackageReference Include="System.ServiceProcess.ServiceController" Version="7.0.0" />
 
     <PackageReference Include="System.Text.Json" Version="9.0.5" />
-    <!-- ÐéÄâÎÄ¼þÏµÍ³ -->
+    <!-- ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ÏµÍ³ -->
     <PackageReference Include="DokanNet" Version="2.3.0.1" />
     
-    <!-- ÈÕÖ¾¼ÇÂ¼ -->
+    <!-- ï¿½ï¿½Ö¾ï¿½ï¿½Â¼ -->
     <PackageReference Include="NLog" Version="5.5.0" />
     
-    <!-- ÏµÍ³¹ÜÀí -->
+    <!-- ÏµÍ³ï¿½ï¿½ï¿½ï¿½ -->
     <PackageReference Include="System.Management" Version="9.0.5" />
   </ItemGroup>
 

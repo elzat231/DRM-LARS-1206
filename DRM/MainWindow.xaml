@@ -1,7 +1,7 @@
 ﻿<Window x:Class="XPlaneActivator.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="X-Plane DRM Activator" Height="600" Width="800"
+        Title="X-Plane DRM Activator" Height="650" Width="800"
         ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen"
         Background="#FF2D2D30" Foreground="White">
 
@@ -29,7 +29,6 @@
             </Style.Triggers>
         </Style>
 
-        <!-- New: Deactivate button style -->
         <Style x:Key="DeactivateButton" TargetType="Button">
             <Setter Property="Background" Value="#FFFF6B6B"/>
             <Setter Property="Foreground" Value="White"/>
@@ -99,14 +98,12 @@
                                  Text="" MaxLength="50" 
                                  ToolTip="Format: XXXX-XXXX-XXXX-XXXX"/>
 
-                        <!-- Modified: Button area supporting multi-row layout -->
                         <StackPanel Margin="0,15,0,0">
                             <!-- First row buttons -->
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                                 <Button x:Name="btnActivate" Content="Online Activation" 
                                         Style="{StaticResource ModernButton}"
-                                        Click="BtnActivate_Click" Width="120"/>
-                                <!-- New: Deactivate button, hidden by default -->
+                                        Click="BtnActivate_Click" Width="140"/>
                                 <Button x:Name="btnDeactivate" Content="Deactivate" 
                                         Style="{StaticResource DeactivateButton}"
                                         Click="BtnDeactivate_Click" Width="120"
@@ -117,8 +114,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="btnDiagnostic" Content="System Diagnostic" 
                                         Style="{StaticResource ModernButton}"
-                                        Click="BtnDiagnostic_Click" Width="120"/>
-                                <!-- New: Activation status info button -->
+                                        Click="BtnDiagnostic_Click" Width="140"/>
                                 <Button x:Name="btnActivationInfo" Content="Activation Info" 
                                         Style="{StaticResource ModernButton}"
                                         Click="BtnActivationInfo_Click" Width="120"
@@ -147,7 +143,7 @@
                         <TextBlock Text="Virtual File System:" FontWeight="SemiBold" Margin="0,15,0,5"/>
                         <TextBlock x:Name="lblVfsStatus" Text="Not Mounted" Foreground="#FFCCCCCC"/>
 
-                        <!-- New: Activation status information -->
+                        <!-- Fixed: Missing activation status information controls -->
                         <TextBlock x:Name="lblActivationStatusTitle" Text="Activation Status:" FontWeight="SemiBold" 
                                   Margin="0,15,0,5" Visibility="Collapsed"/>
                         <StackPanel x:Name="spActivationInfo" Orientation="Vertical" Visibility="Collapsed">

@@ -6,11 +6,11 @@ using System.Collections.Generic;
 namespace XPlaneActivator
 {
     /// <summary>
-    /// Resource Manager - Unified management of multilingual string resources
+    /// Resource Manager - English UI strings for X-Plane DRM Activator
     /// </summary>
     public static class R
     {
-        private static readonly Dictionary<string, string> fallbackStrings = new Dictionary<string, string>
+        private static readonly Dictionary<string, string> englishStrings = new Dictionary<string, string>
         {
             // Application
             ["AppTitle"] = "X-Plane DRM Activator",
@@ -21,9 +21,9 @@ namespace XPlaneActivator
             // Main Window UI
             ["ActivationCode"] = "Activation Code",
             ["EnterActivationCode"] = "Enter your activation code",
-            ["ActivateButton"] = "Activate Online",
+            ["ActivateButton"] = "Online Activation",
             ["ActivatingButton"] = "Activating...",
-            ["AlreadyActivated"] = "Already Activated",
+            ["AlreadyActivated"] = "Activated",
             ["DeactivateButton"] = "Deactivate",
             ["DiagnosticButton"] = "System Diagnostic",
             ["ActivationInfo"] = "Activation Info",
@@ -35,7 +35,7 @@ namespace XPlaneActivator
             ["StatusActivated"] = "Activated",
             ["StatusActivating"] = "Activating...",
             ["StatusError"] = "Error",
-            ["StatusInitializing"] = "Initializing...",
+            ["StatusInitializing"] = "Initializing system...",
             ["StatusValidating"] = "Validating activation code...",
             ["StatusDecrypting"] = "Decrypting activation data...",
             ["StatusMounting"] = "Mounting virtual file system...",
@@ -47,7 +47,7 @@ namespace XPlaneActivator
 
             // Network Status
             ["NetworkStatus"] = "Network Status",
-            ["NetworkOnline"] = "Network Normal (lars-store.kz)",
+            ["NetworkOnline"] = "Network Online (lars-store.kz)",
             ["NetworkOffline"] = "Network Disconnected",
             ["NetworkError"] = "Network Error",
             ["ConnectionOnline"] = "Online",
@@ -70,35 +70,27 @@ namespace XPlaneActivator
             ["AdminPrivilegesCheck"] = "Administrator privileges check passed",
             ["AdminPrivilegesWarning"] = "Warning: Not running as administrator, virtual file system may not work properly",
 
-            // Dokan Driver 相关 - 更详细的状态信息
-            ["DokanDriverFound"] = "Dokan driver installed",
-            ["DokanDriverNotFound"] = "Warning: Dokan driver not installed, please install Dokan driver first",
+            // Dokan Driver
+            ["DokanDriverFound"] = "Dokan driver detected",
+            ["DokanDriverNotFound"] = "Warning: Dokan driver not detected, please install Dokan driver first",
             ["DokanDriverNotInstalled"] = "Dokan driver not detected",
             ["DokanDriverFullyInstalled"] = "Dokan driver fully installed and ready",
             ["DokanNetFoundButDriverMissing"] = "DokanNet library found, but system driver may be missing",
             ["DokanPartialInstallation"] = "Partial Dokan installation detected, may have compatibility issues",
             ["DokanCheckError"] = "Error checking Dokan installation: {0}",
-            ["DokanInstallationInstructions"] = "To install Dokan driver, please download from: https://github.com/dokan-dev/dokany/releases",
-            ["DokanCompatibilityInfo"] = "This application requires Dokan 2.x version for optimal compatibility",
-            ["DokanVersionCheck"] = "Checking Dokan version compatibility...",
-            ["DokanVersionFound"] = "Dokan version detected: {0}",
-            ["DokanVersionCompatible"] = "Dokan version is compatible",
-            ["DokanVersionIncompatible"] = "Warning: Dokan version may not be compatible",
-            ["DokanRegistryPath"] = "Dokan registry path: {0}",
-            ["DokanSystemFiles"] = "Dokan system files detected: {0}",
-            ["DokanServiceName"] = "Dokan service: {0}",
 
-            ["CryptoEngineDllFound"] = "Encryption engine DLL found",
-            ["CryptoEngineDllNotFound"] = "Warning: CryptoEngine.dll not found, will use C# backup verification",
-            ["CryptoEngineTestPassed"] = "Encryption engine functioning normally",
-            ["CryptoEngineTestFailed"] = "Warning: Encryption engine test failed, will use backup method",
-            ["CryptoEngineTestException"] = "Warning: Encryption engine test exception: {0}",
+            // Crypto Engine
+            ["CryptoEngineDllFound"] = "CryptoEngine.dll found",
+            ["CryptoEngineDllNotFound"] = "Warning: CryptoEngine.dll not found, will use C# fallback verification",
+            ["CryptoEngineTestPassed"] = "CryptoEngine functioning normally",
+            ["CryptoEngineTestFailed"] = "Warning: CryptoEngine test failed, will use fallback method",
+            ["CryptoEngineTestException"] = "Warning: CryptoEngine test exception: {0}",
 
             // Activation Process
             ["StartingActivation"] = "Starting activation process, code: {0}...",
             ["ConnectingToServer"] = "Connecting to lars-store.kz activation server...",
             ["SendingActivationRequest"] = "Sending activation request to lars-store.kz...",
-            ["ProcessingServerResponse"] = "Received lars-store.kz server response, parsing...",
+            ["ProcessingServerResponse"] = "Processing lars-store.kz server response...",
             ["OnlineActivationSuccess"] = "lars-store.kz online verification successful, received access token",
             ["OnlineActivationSuccessNoToken"] = "Activation successful but no token received, using offline mode",
             ["OnlineActivationFailed"] = "lars-store.kz verification failed: {0}",
@@ -178,7 +170,7 @@ namespace XPlaneActivator
             ["NetworkErrorMessage"] = "Unable to connect to activation server: {0}\n\nPlease check your network connection or firewall settings.",
             ["ActivationError"] = "Activation Error",
             ["ActivationErrorMessage"] = "Activation failed: {0}",
-            ["OnlineActivationFailedMessage"] = "Online activation failed. Try offline activation?\n\nNote: Offline activation only works with valid activation codes.",
+            ["OnlineActivationFailedMessage"] = "Online activation failed: {0}\n\nWould you like to try offline activation?\n\nNote: Offline activation only works with valid activation codes.",
             ["OfflineActivationFailedMessage"] = "Offline activation failed: {0}",
             ["TokenProcessingException"] = "Token processing exception: {0}",
             ["ActivationCodeProcessingException"] = "Activation code processing exception: {0}",
@@ -206,7 +198,7 @@ namespace XPlaneActivator
             // System Initialization
             ["InitializingSystem"] = "Initializing system...",
             ["SystemInitializationComplete"] = "System initialization complete, waiting for activation...",
-            ["SystemInitializationFailed"] = "Initialization failed: {0}",
+            ["SystemInitializationFailed"] = "System initialization failed: {0}",
             ["InitializationFailed"] = "Initialization failed",
 
             // Online/Offline Verification
@@ -225,7 +217,7 @@ namespace XPlaneActivator
             ["InvalidServerResponse"] = "Invalid server response format",
             ["ServerResponseContent"] = "Response content: {0}",
 
-            // 诊断相关 - 修复字符串格式化
+            // Diagnostics
             ["DiagnosticStarting"] = "Starting comprehensive system diagnostic...",
             ["DiagnosticCompleted"] = "Diagnostic completed! Total {0} checks performed",
             ["DiagnosticCheckCount"] = "Diagnostic completed! Total {0} checks",
@@ -236,31 +228,9 @@ namespace XPlaneActivator
             ["DiagnosticProcessException"] = "Diagnostic process exception: {0}",
             ["DiagnosticFailed"] = "Diagnostic failed: {0}",
             ["RunningDiagnostic"] = "Running diagnostic...",
-            ["DiagnosticCompleted"] = "Diagnostic completed",
             ["DiagnosticProgress"] = "Diagnostic progress: {0}/{1} tests completed",
             ["DiagnosticStepCompleted"] = "Step completed: {0}",
             ["DiagnosticOverallResult"] = "Overall diagnostic result: {0}",
-
-            // 诊断详细信息
-            ["DiagnosticCheckingBasicEnvironment"] = "Checking basic environment...",
-            ["DiagnosticCheckingCppDll"] = "Checking C++ CryptoEngine.dll...",
-            ["DiagnosticCheckingCsharpFallback"] = "Checking C# backup verification functionality...",
-            ["DiagnosticCheckingVirtualFileSystem"] = "Checking virtual file system...",
-            ["DiagnosticCheckingProcessAccessControl"] = "Checking process access control...",
-            ["DiagnosticCheckingMemorySecurity"] = "Checking memory security...",
-            ["DiagnosticCheckingNetworkFunctionality"] = "Checking network functionality...",
-            ["DiagnosticPerformanceTesting"] = "Performing performance testing...",
-            ["DiagnosticIntegratedFunctionality"] = "Performing integrated functionality testing...",
-
-            ["DiagnosticCategoryBasic"] = "Basic Environment",
-            ["DiagnosticCategoryCppDll"] = "C++ DLL",
-            ["DiagnosticCategoryCsharp"] = "C# Fallback Verification",
-            ["DiagnosticCategoryVfs"] = "Virtual File System",
-            ["DiagnosticCategoryProcess"] = "Process Access Control",
-            ["DiagnosticCategoryMemory"] = "Memory Security",
-            ["DiagnosticCategoryNetwork"] = "Network Functionality",
-            ["DiagnosticCategoryPerformance"] = "Performance Testing",
-            ["DiagnosticCategoryIntegrated"] = "Integrated Functionality",
 
             // Log Management
             ["LogCleared"] = "Log cleared",
@@ -299,7 +269,6 @@ namespace XPlaneActivator
             // File and Directory Operations
             ["OptionalFileFound"] = "Found optional file: {0}",
             ["OptionalFileNotFound"] = "Optional file does not exist: {0} (will use backup method)",
-            ["TestWriteAccess"] = "test_write_access.tmp",
 
             // Version and Environment Info
             ["VersionInfo"] = "Version: {0}",
@@ -355,131 +324,6 @@ namespace XPlaneActivator
             ["VFSFoundMatchingFiles"] = "Found {0} matching files",
             ["VFSMountedToPoint"] = "File system mounted to: {0}",
             ["VFSUnmountedFromPoint"] = "File system unmounted",
-            ["VFSCreateFileError"] = "CreateFile error: {0}",
-            ["VFSReadFileError"] = "ReadFile error: {0}",
-            ["VFSGetFileInfoError"] = "GetFileInformation error: {0}",
-            ["VFSFindFilesError"] = "FindFiles error: {0}",
-            ["VFSFindFilesWithPatternError"] = "FindFilesWithPattern error: {0}",
-
-            // Additional VFS Messages
-            ["VFSMountInProgress"] = "Mount already in progress, please wait for completion",
-            ["VFSPreparing"] = "Preparing virtual file system",
-            ["VFSMountingToPoint"] = "Mounting to {0}",
-            ["VFSDokanInstanceCreated"] = "Dokan instance creation completed, waiting for mount confirmation",
-            ["VFSDokanError"] = "Dokan error: {0}",
-            ["VFSSystemError"] = "System error: {0}",
-            ["VFSWaitingForMount"] = "Waiting for mount completion...",
-            ["VFSMountCancelled"] = "Mount was cancelled",
-            ["VFSMountTimeout"] = "Mount timeout (30 seconds)",
-            ["VFSMountPointVerificationFailed"] = "Mount point verification failed",
-            ["VFSMountCompletedButInaccessible"] = "Mount completed but cannot access mount point",
-            ["VFSMountNotCompleted"] = "Mount was not completed successfully",
-            ["VFSMountProcessNotCompleted"] = "Mount process was not completed successfully",
-            ["VFSMountOperationCancelled"] = "Virtual file system mount operation was cancelled",
-            ["VFSMountError"] = "Error mounting virtual file system: {0}",
-            ["VFSUnmountError"] = "Error unmounting virtual file system: {0}",
-            ["VFSReleasingDokanInstance"] = "Releasing Dokan instance",
-            ["VFSDokanInstanceDisposeError"] = "Error disposing Dokan instance: {0}",
-            ["VFSDokanInstanceReleased"] = "Dokan instance released normally",
-            ["VFSDokanInstanceDisposeTimeout"] = "Dokan instance disposal timeout, forcing continue",
-            ["VFSRemovingMountPoint"] = "Removing mount point {0}",
-            ["VFSRemoveMountPointError"] = "Error removing mount point: {0}",
-            ["VFSMountPointRemoved"] = "Mount point removed",
-            ["VFSMountPointRemoveTimeout"] = "Mount point removal timeout, forcing continue",
-            ["VFSDokanObjectDisposeError"] = "Error disposing Dokan object: {0}",
-            ["VFSDokanObjectReleased"] = "Dokan object released",
-            ["VFSDokanObjectDisposeTimeout"] = "Dokan object disposal timeout, forcing continue",
-            ["VFSUnmountedSuccess"] = "Virtual file system unmounted successfully",
-            ["VFSAsyncUnmountError"] = "Error during async unmount: {0}",
-            ["VFSForceUnmounting"] = "Force unmounting virtual file system",
-            ["VFSForceUnmountComplete"] = "Force unmount completed",
-
-            // App Lifecycle Messages
-            ["AppVersionInfo"] = "Version: {0}",
-            ["AppLocationInfo"] = "Location: {0}",
-            ["AppWorkingDirectoryInfo"] = "Working Directory: {0}",
-            ["AppOperatingSystemInfo"] = "Operating System: {0}",
-            ["AppDotNetVersionInfo"] = ".NET Version: {0}",
-            ["AppIs64BitInfo"] = "Is 64-bit: {0}",
-            ["AppMachineNameInfo"] = "Machine Name: {0}",
-            ["AppUserNameInfo"] = "User Name: {0}",
-            ["AppStartupTimeInfo"] = "Startup Time: {0}",
-            ["AppExiting"] = "Application exiting, exit code: {0}",
-            ["AppExitException"] = "Exception on exit: {0}",
-            ["AppSingleInstanceRunning"] = "X-Plane DRM Activator is already running!",
-            ["AppSystemRequirementsNotMet"] = "This application can only run on Windows systems.",
-            ["AppDirectoryNotWritable"] = "Application directory is not writable: {0}\n\nPlease run as administrator or choose another directory.",
-            ["AppSystemRequirementsCheckFailed"] = "System requirements check failed: {0}",
-            ["AppSingleInstanceCheckException"] = "Single instance check exception: {0}",
-            ["AppOptionalFileFound"] = "Found optional file: {0}",
-            ["AppOptionalFileNotFound"] = "Optional file does not exist: {0} (will use backup method)",
-
-            // NetworkManager Messages
-            ["NetworkManagerInitialized"] = "NetworkManager initialized, DLL available: {0}",
-            ["NetworkDllNotFound"] = "network.dll not found",
-            ["NetworkDllEntryPointNotFound"] = "DLL function entry point not found: {0}",
-            ["NetworkDllInitializationException"] = "DLL initialization exception: {0}",
-            ["NetworkDllVersion"] = "network.dll version: {0}",
-            ["NetworkUsingDll"] = "Using network.dll to send request to: {0}",
-            ["NetworkDllConnectionTestFailed"] = "DLL connection test failed: {0}",
-            ["NetworkDllPostSuccess"] = "DLL POST request successful, response length: {0}",
-            ["NetworkDllResponseValidationPassed"] = "DLL response format validation passed",
-            ["NetworkDllResponseValidationFailed"] = "DLL response format validation failed, but still returning response",
-            ["NetworkDllPostFailed"] = "DLL POST request failed: {0}",
-            ["NetworkDllFallbackToHttpClient"] = "DLL POST exception, falling back to HttpClient: {0}",
-            ["NetworkUsingHttpClient"] = "Using C# HttpClient to send request to: {0}",
-            ["NetworkResponseStatusCode"] = "Response status code: {0}",
-            ["NetworkResponseContent"] = "Response content: {0}",
-            ["NetworkResponseContainsValidData"] = "Response contains valid activation data, ignoring HTTP status code",
-            ["NetworkResponseInvalidJson"] = "Response is not valid JSON format",
-            ["NetworkHttpRequestException"] = "HTTP request exception: {0}",
-            ["NetworkRequestTimeout"] = "Request timeout",
-            ["NetworkException"] = "Network exception: {0}",
-            ["NetworkConnectionTestSuccess"] = "Success",
-            ["NetworkConnectionTestFailed"] = "Failed",
-            ["NetworkLatency"] = "Network latency {0}: {1}ms",
-            ["NetworkLatencyException"] = "Get latency exception: {0}",
-            ["NetworkDllCreateRequestSuccess"] = "DLL create request successful: {0} bytes",
-            ["NetworkDllCreateRequestException"] = "DLL create request exception: {0}",
-            ["NetworkResponseSignatureValidation"] = "DLL response signature validation: {0}",
-            ["NetworkValidationValid"] = "Valid",
-            ["NetworkValidationInvalid"] = "Invalid",
-            ["NetworkDllValidationException"] = "DLL validation exception: {0}",
-            ["NetworkDllCleaned"] = "network.dll cleaned",
-            ["NetworkDllCleanupException"] = "DLL cleanup exception: {0}",
-            ["NetworkManagerDisposed"] = "NetworkManager disposed",
-            ["NetworkDllUnavailable"] = "DLL unavailable",
-            ["NetworkErrorCode"] = "Error code: {0}",
-            ["NetworkFailedToGetDllError"] = "Failed to get DLL error info: {0}",
-            ["NetworkNoError"] = "No error",
-            ["NetworkDllVersionUnknown"] = "network.dll (version unknown)",
-            ["NetworkDllError"] = "network.dll (error: {0})",
-            ["NetworkCSharpHttpClient"] = "C# HttpClient",
-
-            // SecurityManager Messages
-            ["SecurityManagerDisposed"] = "SecurityManager disposed",
-
-            // Time Formatting
-            ["MinutesAgo"] = "{0} minutes ago",
-            ["HoursAgo"] = "{0} hours ago",
-            ["DaysAgo"] = "{0} days ago",
-
-            // File Extensions and Types
-            ["TextFiles"] = "Text files (*.txt)|*.txt|All files (*.*)|*.*",
-            ["HtmlFiles"] = "HTML files (*.html)|*.html",
-            ["AllFiles"] = "All files (*.*)|*.*",
-
-            // Report Generation
-            ["SaveDiagnosticReport"] = "Save Diagnostic Report",
-            ["ReportSavedTo"] = "Diagnostic report saved to: {0}",
-            ["ReportSaveSuccess"] = "Save Successful",
-            ["ReportSaveFailed"] = "Save report failed: {0}",
-            ["GeneratedTime"] = "Generated Time: {0}",
-            ["OverallStatus"] = "Overall Status: {0}",
-            ["TotalTests"] = "Total Tests: {0}",
-            ["PassedTests"] = "Passed: {0}",
-            ["WarningTests"] = "Warning: {0}",
-            ["FailedTests"] = "Failed: {0}",
 
             // Status Values
             ["StatusExcellent"] = "Excellent",
@@ -504,7 +348,6 @@ namespace XPlaneActivator
             }
             catch
             {
-                // If resource manager initialization fails, use fallback strings
                 resourceManager = null;
             }
         }
@@ -528,20 +371,20 @@ namespace XPlaneActivator
                     }
                 }
 
-                // Get from fallback dictionary
-                if (fallbackStrings.TryGetValue(key, out string? fallbackValue))
+                // Get from English dictionary
+                if (englishStrings.TryGetValue(key, out string? englishValue))
                 {
-                    return fallbackValue;
+                    return englishValue;
                 }
 
                 return key; // If not found, return the key itself
             }
             catch
             {
-                // Get from fallback dictionary
-                if (fallbackStrings.TryGetValue(key, out string? fallbackValue))
+                // Get from English dictionary
+                if (englishStrings.TryGetValue(key, out string? englishValue))
                 {
-                    return fallbackValue;
+                    return englishValue;
                 }
                 return key;
             }

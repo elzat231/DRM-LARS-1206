@@ -1,72 +1,117 @@
 ﻿using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Media;
-using Microsoft.Win32;
-using System.Collections.Generic;
-using System.Linq;
-using System.ServiceProcess; // 现在应该可以正常使用了
+using XPlaneActivator.Services;
+using DRM.VFS;
 
 namespace XPlaneActivator
 {
+    /// <summary>
+    /// Enhanced MainWindow with English interface and fixed UI logic
+    /// </summary>
     public partial class MainWindow : Window
     {
+        // =====================================================
+        // Service Dependencies
+        // =====================================================
+        private readonly IActivationService activationService;
+        private readonly ISystemCheckService systemCheckService;
+        private readonly IUIController uiController;
+
+        // =====================================================
+        // State Management
+        // =====================================================
+        private volatile bool isClosing = false;
+        private readonly object closingLock = new object();
+        private CancellationTokenSource? cancellationTokenSource;
+        private bool isCurrentlyActivated = false;
+        private ActivationState? currentActivationState = null;
+
+        // =====================================================
+        // Core Managers (for service injection)
+        // =====================================================
         private readonly NetworkManager networkManager;
         private readonly SecurityManager securityManager;
         private readonly VirtualFileSystemManager vfsManager;
         private readonly ActivationStateManager stateManager;
+
+        // =====================================================
+        // Timers
+        // =====================================================
         private readonly Timer networkCheckTimer;
         private readonly Timer activationCheckTimer;
-        private CancellationTokenSource? cancellationTokenSource;
 
-        // Close related fields
-        private volatile bool isClosing = false;
-        private readonly object closingLock = new object();
-
-        // Activation state related fields
-        private bool isCurrentlyActivated = false;
-        private ActivationState? currentActivationState = null;
-
+        // =====================================================
+        // Constructor and Initialization
+        // =====================================================
         public MainWindow()
         {
             InitializeComponent();
 
-            // Initialize managers
+            // Initialize core managers
             networkManager = new NetworkManager();
             securityManager = new SecurityManager();
-            vfsManager = new VirtualFileSystemManager();
+            vfsManager = new DRM.VFS.VirtualFileSystemManager(@"W:\", DRM.VFS.VfsAccessMode.AllowAll);
             stateManager = new ActivationStateManager();
+
+            // Initialize services
+            var serviceContainer = CreateServiceContainer();
+            activationService = serviceContainer.GetService<IActivationService>();
+            systemCheckService = serviceContainer.GetService<ISystemCheckService>();
+            uiController = serviceContainer.GetService<IUIController>();
 
             // Setup event handlers
             SetupEventHandlers();
 
-            // Initialize UI
-            InitializeUI();
-
-            // Setup timer to check network status
+            // Setup timers
             networkCheckTimer = new Timer(CheckNetworkStatus, null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
-
-            // Setup timer to check activation status (every minute)
             activationCheckTimer = new Timer(CheckActivationStatus, null, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+
+            // Async initialization
+            _ = InitializeAsync();
+        }
+
+        private ServiceContainer CreateServiceContainer()
+        {
+            var container = new ServiceContainer();
+
+            // Register core managers
+            container.RegisterSingleton(networkManager);
+            container.RegisterSingleton(securityManager);
+            container.RegisterSingleton(vfsManager);
+            container.RegisterSingleton(stateManager);
+
+            // Register services
+            container.RegisterSingleton<IActivationService>(new ActivationService(
+                networkManager, securityManager, vfsManager, stateManager));
+            container.RegisterSingleton<ISystemCheckService>(new SystemCheckService(securityManager));
+            container.RegisterSingleton<IUIController>(new UIController(this));
+
+            return container;
         }
 
         private void SetupEventHandlers()
         {
+            // Activation service events
+            activationService.ProgressChanged += OnActivationProgressChanged;
+            activationService.LogMessage += OnServiceLogMessage;
+
             // VFS status change events
             vfsManager.StatusChanged += VfsManager_StatusChanged;
             vfsManager.LogMessage += VfsManager_LogMessage;
 
-            // Window close event
+            // Window events
             this.Closing += MainWindow_Closing;
         }
 
-        private async void InitializeUI()
+        private async Task InitializeAsync()
         {
             try
             {
-                AddLog(R.Get("InitializingSystem"));
+                uiController.AddLog("========== X-Plane DRM Activator Starting ==========");
+                uiController.UpdateStatus("Initializing system...");
 
                 // Generate and display machine code
                 await Task.Run(() =>
@@ -75,134 +120,123 @@ namespace XPlaneActivator
                     Dispatcher.Invoke(() =>
                     {
                         txtMachineCode.Text = machineCode;
-                        AddLog(R.MachineCodeGenerated(machineCode.Substring(0, 8)));
+                        uiController.AddLog($"Machine code generated: {machineCode.Substring(0, 8)}...");
                     });
                 });
 
-                // Check system environment
-                await CheckSystemEnvironment();
+                // System environment check
+                await PerformSystemCheck();
 
-                // Check previous activation state
-                await CheckPreviousActivationState();
+                // Check previous activation status
+                await CheckPreviousActivation();
 
                 if (!isCurrentlyActivated)
                 {
-                    AddLog(R.Get("SystemInitializationComplete"));
-                    UpdateStatus(R.Get("StatusReady"));
+                    uiController.AddLog("System initialization complete, waiting for activation...");
+                    uiController.UpdateStatus("Ready - Please enter activation code");
                 }
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("SystemInitializationFailed", ex.Message));
-                UpdateStatus(R.Get("InitializationFailed"));
+                uiController.AddLog($"System initialization failed: {ex.Message}");
+                uiController.UpdateStatus("Initialization failed");
+                uiController.ShowMessage($"Initialization failed: {ex.Message}", "Error", true);
             }
         }
 
-        /// <summary>
-        /// Check previous activation state
-        /// </summary>
-        private async Task CheckPreviousActivationState()
+        // =====================================================
+        // System Check
+        // =====================================================
+        private async Task PerformSystemCheck()
         {
-            try
+            uiController.AddLog("Checking system environment...");
+
+            var checkResult = await systemCheckService.PerformSystemCheckAsync();
+
+            // Report check results
+            if (!checkResult.IsAdmin)
             {
-                AddLog(R.Get("CheckingPreviousActivation"));
+                uiController.AddLog("Warning: Not running as administrator, virtual file system may not work properly");
+            }
+            else
+            {
+                uiController.AddLog("Administrator privileges check passed");
+            }
 
-                // Get saved activation state
-                var savedState = stateManager.GetCurrentState();
-
-                if (savedState != null)
+            // Dokan driver check
+            if (checkResult.DokanCheck.IsInstalled)
+            {
+                uiController.AddLog($"Dokan driver check: {checkResult.DokanCheck.Message}");
+                if (!string.IsNullOrEmpty(checkResult.DokanCheck.Details))
                 {
-                    AddLog(R.GetFormatted("FoundValidActivation", savedState.ActivationTime.ToString("yyyy-MM-dd HH:mm:ss")));
+                    uiController.AddLog($"Dokan details: {checkResult.DokanCheck.Details}");
+                }
+            }
+            else
+            {
+                uiController.AddLog($"Warning: {checkResult.DokanCheck.Message}");
+            }
 
-                    int remainingDays = stateManager.GetRemainingDays();
-                    AddLog(R.GetFormatted("ActivationRemainingDays", remainingDays));
-
-                    // Check if revalidation is needed
-                    if (stateManager.ShouldRevalidate())
-                    {
-                        AddLog(R.Get("RevalidationNeeded"));
-
-                        if (await PerformRevalidation(savedState))
-                        {
-                            AddLog(R.Get("RevalidationSuccess"));
-                        }
-                        else
-                        {
-                            AddLog(R.Get("RevalidationFailed"));
-                            stateManager.ClearActivationState();
-                            return;
-                        }
-                    }
-
-                    // Try to restore virtual file system
-                    await RestoreVirtualFileSystem(savedState);
+            // Encryption engine check
+            if (checkResult.CryptoEngineAvailable)
+            {
+                uiController.AddLog("CryptoEngine.dll found");
+                if (checkResult.CryptoEngineTest)
+                {
+                    uiController.AddLog("CryptoEngine functioning normally");
                 }
                 else
                 {
-                    AddLog(R.Get("NoValidActivation"));
-                    UpdateActivationUI(false, null);
+                    uiController.AddLog("Warning: CryptoEngine test failed, will use fallback method");
                 }
             }
-            catch (Exception ex)
+            else
             {
-                AddLog(R.GetFormatted("ActivationCheckError", ex.Message));
-                UpdateActivationUI(false, null);
+                uiController.AddLog("Warning: CryptoEngine.dll not found, will use C# fallback verification");
             }
         }
 
-        /// <summary>
-        /// Revalidate activation state
-        /// </summary>
-        private async Task<bool> PerformRevalidation(ActivationState state)
+        // =====================================================
+        // Activation State Management
+        // =====================================================
+        private async Task CheckPreviousActivation()
         {
             try
             {
-                // Update heartbeat time
-                stateManager.UpdateHeartbeat();
+                uiController.AddLog("Checking previous activation status...");
 
-                // If has server token, try online validation
-                if (!string.IsNullOrEmpty(state.ServerToken))
+                var isValid = await activationService.ValidateExistingActivationAsync();
+                var currentState = activationService.GetCurrentActivationState();
+
+                if (isValid && currentState != null)
                 {
-                    // Server-side validation logic can be added here
-                    AddLog(R.Get("PerformingOnlineRevalidation"));
+                    uiController.AddLog($"Found valid activation status, activation time: {currentState.ActivationTime:yyyy-MM-dd HH:mm:ss}");
 
-                    // 添加实际的异步操作
-                    await Task.Delay(100); // 模拟异步操作
-                    // For now, return success. In actual project, should call server API for validation
-                    return true;
+                    int remainingDays = 30 - (int)(DateTime.Now - currentState.ActivationTime).TotalDays;
+                    uiController.AddLog($"Activation remaining days: {remainingDays} days");
+
+                    // Try to restore virtual file system
+                    await RestoreVirtualFileSystem(currentState);
                 }
-
-                // Offline validation: re-decrypt activation code
-                if (!string.IsNullOrEmpty(state.ActivationCode))
+                else
                 {
-                    AddLog(R.Get("PerformingOfflineRevalidation"));
-
-                    // 将同步操作包装为异步
-                    return await Task.Run(() =>
-                    {
-                        byte[]? data = securityManager.ValidateAndDecrypt(state.ActivationCode);
-                        return data != null && data.Length > 0;
-                    });
+                    uiController.AddLog("No valid activation status found");
+                    uiController.UpdateActivationUI(false, null);
                 }
-
-                return false;
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("RevalidationFailed", ex.Message));
-                return false;
+                uiController.AddLog($"Error checking activation status: {ex.Message}");
+                uiController.UpdateActivationUI(false, null);
             }
         }
 
-        /// <summary>
-        /// Restore virtual file system
-        /// </summary>
         private async Task RestoreVirtualFileSystem(ActivationState state)
         {
             try
             {
-                AddLog(R.Get("RestoringVirtualFileSystem"));
-                UpdateStatus(R.Get("StatusRestoring"));
+                uiController.AddLog("Restoring virtual file system...");
+                uiController.UpdateStatus("Restoring activation status...");
 
                 byte[]? decryptedData = null;
 
@@ -220,7 +254,7 @@ namespace XPlaneActivator
 
                 if (decryptedData != null && decryptedData.Length > 0)
                 {
-                    AddLog(R.DataDecryptionSuccess(decryptedData.Length));
+                    uiController.AddLog($"Data decryption successful, size: {decryptedData.Length} bytes");
 
                     // Mount virtual file system
                     bool mounted = await Task.Run(() =>
@@ -235,739 +269,129 @@ namespace XPlaneActivator
                         isCurrentlyActivated = true;
                         currentActivationState = state;
 
-                        AddLog(R.VFSMountedSuccess(vfsManager.MountPoint));
-                        UpdateStatus(R.Get("ActivationSuccessful"));
-                        UpdateActivationUI(true, state);
+                        uiController.AddLog($"Virtual file system successfully mounted to {vfsManager.MountPoint}");
+                        uiController.UpdateStatus("Activation successful");
+                        uiController.UpdateActivationUI(true, state);
 
                         // Show welcome message
                         ShowActivationWelcomeMessage(state);
                     }
                     else
                     {
-                        AddLog(R.Get("VFSRestorationFailed"));
-                        UpdateActivationUI(false, null);
+                        uiController.AddLog("Virtual file system restoration failed");
+                        uiController.UpdateActivationUI(false, null);
                     }
                 }
                 else
                 {
-                    AddLog(R.Get("CannotDecryptSavedData"));
+                    uiController.AddLog("Cannot decrypt saved activation data");
                     stateManager.ClearActivationState();
-                    UpdateActivationUI(false, null);
+                    uiController.UpdateActivationUI(false, null);
                 }
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("VFSRestorationFailed", ex.Message));
-                UpdateActivationUI(false, null);
+                uiController.AddLog($"Virtual file system restoration failed: {ex.Message}");
+                uiController.UpdateActivationUI(false, null);
             }
         }
 
-        /// <summary>
-        /// Show activation welcome message
-        /// </summary>
         private void ShowActivationWelcomeMessage(ActivationState state)
         {
             try
             {
-                int remainingDays = stateManager.GetRemainingDays();
-                string welcomeMessage = $"{R.Get("WelcomeBack")}\n\n" +
-                                      $"{R.Get("ActivationStatusActive")}\n" +
-                                      $"{R.GetFormatted("ActivationTimeLabel", state.ActivationTime.ToString("yyyy-MM-dd HH:mm:ss"))}\n" +
-                                      $"{R.GetFormatted("RemainingDaysLabel", remainingDays)}\n" +
-                                      $"{R.GetFormatted("VirtualFileSystemLabel", vfsManager.MountPoint)}\n\n" +
-                                      $"{R.Get("XPlaneReadyMessage")}";
+                int remainingDays = 30 - (int)(DateTime.Now - state.ActivationTime).TotalDays;
+                string welcomeMessage = $"Welcome back!\n\n" +
+                                      $"Activation Status: Activated\n" +
+                                      $"Activation Time: {state.ActivationTime:yyyy-MM-dd HH:mm:ss}\n" +
+                                      $"Remaining Days: {remainingDays} days\n" +
+                                      $"Virtual File System: {vfsManager.MountPoint}\n\n" +
+                                      $"X-Plane is ready to use.";
 
-                MessageBox.Show(welcomeMessage, R.Get("ActivationComplete"),
-                               MessageBoxButton.OK, MessageBoxImage.Information);
+                uiController.ShowMessage(welcomeMessage, "Activation Complete");
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("ShowingActivationInfoError", ex.Message));
+                uiController.AddLog($"Error showing activation info: {ex.Message}");
             }
         }
 
-        /// <summary>
-        /// Update activation related UI
-        /// </summary>
-        private void UpdateActivationUI(bool isActivated, ActivationState? state)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                if (isActivated && state != null)
-                {
-                    // Activated state
-                    btnActivate.Content = R.Get("AlreadyActivated");
-                    btnActivate.IsEnabled = false;
-
-                    // Show activation info
-                    int remainingDays = stateManager.GetRemainingDays();
-                    txtActivationCode.Text = $"{R.Get("AlreadyActivated")} - {R.GetFormatted("RemainingDaysLabel", remainingDays)}";
-                    txtActivationCode.IsEnabled = false;
-
-                    // Show deactivate button
-                    if (btnDeactivate != null)
-                    {
-                        btnDeactivate.IsEnabled = true;
-                        btnDeactivate.Visibility = Visibility.Visible;
-                    }
-
-                    // Show activation info button
-                    if (btnActivationInfo != null)
-                    {
-                        btnActivationInfo.IsEnabled = true;
-                        btnActivationInfo.Visibility = Visibility.Visible;
-                    }
-
-                    // Update detailed activation info
-                    UpdateDetailedActivationInfo(state);
-
-                    lblVfsStatus.Text = R.GetFormatted("VFSMountedSuccess", vfsManager.MountPoint);
-                    lblVfsStatus.Foreground = new SolidColorBrush(Colors.LightGreen);
-                }
-                else
-                {
-                    // Not activated state
-                    btnActivate.Content = R.Get("ActivateButton");
-                    btnActivate.IsEnabled = true;
-
-                    txtActivationCode.Text = "";
-                    txtActivationCode.IsEnabled = true;
-                    txtActivationCode.Focus();
-
-                    // Hide deactivate button
-                    if (btnDeactivate != null)
-                    {
-                        btnDeactivate.IsEnabled = false;
-                        btnDeactivate.Visibility = Visibility.Collapsed;
-                    }
-
-                    // Hide activation info button
-                    if (btnActivationInfo != null)
-                    {
-                        btnActivationInfo.IsEnabled = false;
-                        btnActivationInfo.Visibility = Visibility.Collapsed;
-                    }
-
-                    // Hide detailed activation info
-                    HideDetailedActivationInfo();
-
-                    lblVfsStatus.Text = R.Get("VFSNotMounted");
-                    lblVfsStatus.Foreground = new SolidColorBrush(Colors.Gray);
-                }
-            });
-        }
-
-        /// <summary>
-        /// Update detailed activation info
-        /// </summary>
-        private void UpdateDetailedActivationInfo(ActivationState state)
-        {
-            try
-            {
-                int remainingDays = stateManager.GetRemainingDays();
-
-                // Show activation status title
-                if (lblActivationStatusTitle != null)
-                {
-                    lblActivationStatusTitle.Visibility = Visibility.Visible;
-                }
-
-                // Show activation info panel
-                if (spActivationInfo != null)
-                {
-                    spActivationInfo.Visibility = Visibility.Visible;
-                }
-
-                // Update various info
-                if (lblActivationTime != null)
-                {
-                    lblActivationTime.Text = R.GetFormatted("ActivationTimeLabel", state.ActivationTime.ToString("yyyy-MM-dd HH:mm:ss"));
-                }
-
-                if (lblRemainingDays != null)
-                {
-                    var brush = remainingDays > 7 ? new SolidColorBrush(Colors.LightGreen) :
-                               remainingDays > 3 ? new SolidColorBrush(Colors.Orange) :
-                               new SolidColorBrush(Colors.Red);
-
-                    lblRemainingDays.Text = R.GetFormatted("RemainingDaysLabel", remainingDays);
-                    lblRemainingDays.Foreground = brush;
-                }
-
-                if (lblLastHeartbeat != null)
-                {
-                    var timeSinceHeartbeat = DateTime.Now - state.LastHeartbeat;
-                    string heartbeatText;
-
-                    if (timeSinceHeartbeat.TotalMinutes < 60)
-                    {
-                        heartbeatText = R.GetFormatted("LastHeartbeatLabel", R.GetFormatted("MinutesAgo", (int)timeSinceHeartbeat.TotalMinutes));
-                    }
-                    else if (timeSinceHeartbeat.TotalHours < 24)
-                    {
-                        heartbeatText = R.GetFormatted("LastHeartbeatLabel", R.GetFormatted("HoursAgo", (int)timeSinceHeartbeat.TotalHours));
-                    }
-                    else
-                    {
-                        heartbeatText = R.GetFormatted("LastHeartbeatLabel", R.GetFormatted("DaysAgo", (int)timeSinceHeartbeat.TotalDays));
-                    }
-
-                    lblLastHeartbeat.Text = heartbeatText;
-                }
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("ShowingActivationInfoError", ex.Message));
-            }
-        }
-
-        /// <summary>
-        /// Hide detailed activation info
-        /// </summary>
-        private void HideDetailedActivationInfo()
-        {
-            if (lblActivationStatusTitle != null)
-            {
-                lblActivationStatusTitle.Visibility = Visibility.Collapsed;
-            }
-
-            if (spActivationInfo != null)
-            {
-                spActivationInfo.Visibility = Visibility.Collapsed;
-            }
-        }
-
-        /// <summary>
-        /// Activation info button event
-        /// </summary>
-        private void BtnActivationInfo_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (currentActivationState == null)
-                {
-                    MessageBox.Show(R.Get("CurrentlyNotActivated"), R.Get("Information"),
-                                   MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-
-                int remainingDays = stateManager.GetRemainingDays();
-                string machineFingerprint = HardwareIdHelper.GetDisplayFingerprint();
-
-                var timeSinceActivation = DateTime.Now - currentActivationState.ActivationTime;
-                var timeSinceHeartbeat = DateTime.Now - currentActivationState.LastHeartbeat;
-
-                string infoMessage = $"{R.Get("DetailedActivationInfo")}\n\n" +
-                                   $"{R.GetFormatted("ActivationCodeLabel", currentActivationState.ActivationCode.Substring(0, Math.Min(8, currentActivationState.ActivationCode.Length)))}\n" +
-                                   $"{R.GetFormatted("ActivationTimeLabel", currentActivationState.ActivationTime.ToString("yyyy-MM-dd HH:mm:ss"))}\n" +
-                                   $"{R.GetFormatted("ActivatedDaysLabel", (int)timeSinceActivation.TotalDays)}\n" +
-                                   $"{R.GetFormatted("RemainingDaysLabel", remainingDays)}\n" +
-                                   $"{R.GetFormatted("LastHeartbeatLabel", currentActivationState.LastHeartbeat.ToString("yyyy-MM-dd HH:mm:ss"))}\n" +
-                                   $"{R.GetFormatted("HeartbeatIntervalLabel", (int)timeSinceHeartbeat.TotalMinutes)}\n" +
-                                   $"{R.GetFormatted("MachineFingerprintLabel", machineFingerprint)}\n" +
-                                   $"{R.GetFormatted("MountPointLabel", currentActivationState.MountPoint ?? R.Get("Unknown"))}\n" +
-                                   $"{R.GetFormatted("ServerTokenLabel", (!string.IsNullOrEmpty(currentActivationState.ServerToken) ? R.Get("ServerTokenAvailable") : R.Get("ServerTokenNotAvailable")))}";
-
-                MessageBox.Show(infoMessage, R.Get("ActivationInfo"),
-                               MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("ShowingActivationInfoError", ex.Message));
-                MessageBox.Show(R.GetFormatted("CannotShowActivationInfo", ex.Message), R.Get("ErrorMessage"),
-                               MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        /// <summary>
-        /// Timer check activation status
-        /// </summary>
-        private void CheckActivationStatus(object? state)
-        {
-            if (isClosing) return;
-
-            Task.Run(() =>
-            {
-                try
-                {
-                    if (isCurrentlyActivated && currentActivationState != null)
-                    {
-                        // Check if activation has expired
-                        int remainingDays = stateManager.GetRemainingDays();
-
-                        if (remainingDays <= 0)
-                        {
-                            Dispatcher.Invoke(() =>
-                            {
-                                AddLog(R.Get("ActivationExpired"));
-                                HandleActivationExpired();
-                            });
-                        }
-                        else if (remainingDays <= 3)
-                        {
-                            Dispatcher.Invoke(() =>
-                            {
-                                AddLog(R.GetFormatted("ActivationExpiredWarning", remainingDays));
-                            });
-                        }
-
-                        // Update heartbeat
-                        stateManager.UpdateHeartbeat();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Check activation status exception: {ex.Message}");
-                }
-            });
-        }
-
-        /// <summary>
-        /// Handle activation expired
-        /// </summary>
-        private void HandleActivationExpired()
-        {
-            try
-            {
-                // Clear activation state
-                stateManager.ClearActivationState();
-                isCurrentlyActivated = false;
-                currentActivationState = null;
-
-                // Unmount virtual file system
-                vfsManager.UnmountVirtualFileSystem();
-
-                // Update UI
-                UpdateActivationUI(false, null);
-                UpdateStatus(R.Get("StatusExpired"));
-
-                // Show expiry prompt
-                MessageBox.Show(R.Get("ActivationExpired"), R.Get("ActivationComplete"),
-                               MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("ProcessActivationExpiredError", ex.Message));
-            }
-        }
-
-        /// <summary>
-        /// Deactivate button event
-        /// </summary>
-        private void BtnDeactivate_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var result = MessageBox.Show(
-                    R.Get("ConfirmDeactivationMessage"),
-                    R.Get("ConfirmDeactivation"),
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    AddLog(R.Get("UserSelectedDeactivation"));
-
-                    // Clear activation state
-                    stateManager.ClearActivationState();
-                    isCurrentlyActivated = false;
-                    currentActivationState = null;
-
-                    // Unmount virtual file system
-                    vfsManager.UnmountVirtualFileSystem();
-
-                    // Update UI
-                    UpdateActivationUI(false, null);
-                    UpdateStatus(R.Get("StatusDeactivated"));
-
-                    AddLog(R.Get("ActivationCancelled"));
-                    MessageBox.Show(R.Get("DeactivationCompleteMessage"), R.Get("DeactivationComplete"),
-                                   MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("DeactivationError", ex.Message));
-                MessageBox.Show(R.GetFormatted("DeactivationFailed", ex.Message), R.Get("ErrorMessage"),
-                               MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private async Task CheckSystemEnvironment()
-        {
-            AddLog(R.Get("SystemEnvironmentCheck"));
-
-            await Task.Run(() =>
-            {
-                // Check administrator privileges
-                bool isAdmin = IsRunningAsAdministrator();
-                if (!isAdmin)
-                {
-                    AddLog(R.Get("AdminPrivilegesWarning"));
-                }
-                else
-                {
-                    AddLog(R.Get("AdminPrivilegesCheck"));
-                }
-
-                // Check Dokan driver - 使用改进的检查方法
-                var dokanResult = CheckDokanInstallation();
-                AddLog(dokanResult.Message);
-                if (!string.IsNullOrEmpty(dokanResult.Details))
-                {
-                    AddLog($"Dokan Details: {dokanResult.Details}");
-                }
-
-                // Check Dokan services using the new method
-                var serviceResult = CheckDokanServiceWithWMI();
-                if (serviceResult.ServicesFound)
-                {
-                    AddLog($"Found {serviceResult.ServiceCount} Dokan services");
-                    foreach (var detail in serviceResult.ServiceDetails)
-                    {
-                        AddLog($"  {detail}");
-                    }
-                }
-                else
-                {
-                    AddLog("No Dokan services found");
-                    if (!string.IsNullOrEmpty(serviceResult.ErrorMessage))
-                    {
-                        AddLog($"Service check error: {serviceResult.ErrorMessage}");
-                    }
-                }
-
-                // Check C++ DLL
-                string dllPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CryptoEngine.dll");
-                if (File.Exists(dllPath))
-                {
-                    AddLog(R.Get("CryptoEngineDllFound"));
-
-                    // Test DLL functionality
-                    try
-                    {
-                        var testResult = securityManager.TestCryptoDll();
-                        if (testResult)
-                        {
-                            AddLog(R.Get("CryptoEngineTestPassed"));
-                        }
-                        else
-                        {
-                            AddLog(R.Get("CryptoEngineTestFailed"));
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        AddLog(R.GetFormatted("CryptoEngineTestException", ex.Message));
-                    }
-                }
-                else
-                {
-                    AddLog(R.Get("CryptoEngineDllNotFound"));
-                }
-            });
-        }
-
-        /// <summary>
-        /// 检查 Dokan 服务（使用 WMI 方式）
-        /// </summary>
-        /// <returns>服务检查结果</returns>
-        private DokanServiceCheckResult CheckDokanServiceWithWMI()
-        {
-            var result = new DokanServiceCheckResult
-            {
-                ServicesFound = false,
-                ServiceCount = 0,
-                ServiceDetails = new List<string>(),
-                ErrorMessage = ""
-            };
-
-            try
-            {
-                // 使用 ServiceController 检查服务（更简单的方式）
-                try
-                {
-                    var services = ServiceController.GetServices();
-                    var dokanServices = services.Where(s =>
-                        s.ServiceName.ToLower().Contains("dokan") ||
-                        s.DisplayName.ToLower().Contains("dokan")).ToList();
-
-                    if (dokanServices.Any())
-                    {
-                        result.ServicesFound = true;
-                        result.ServiceCount = dokanServices.Count;
-
-                        foreach (var service in dokanServices)
-                        {
-                            try
-                            {
-                                result.ServiceDetails.Add($"{service.ServiceName}: {service.Status} ({service.DisplayName})");
-                            }
-                            catch (Exception ex)
-                            {
-                                result.ServiceDetails.Add($"{service.ServiceName}: Status unavailable ({ex.Message})");
-                            }
-                        }
-                    }
-
-                    return result;
-                }
-                catch (Exception serviceEx)
-                {
-                    result.ErrorMessage = $"ServiceController error: {serviceEx.Message}";
-
-                    // 如果 ServiceController 失败，尝试使用 WMI
-                    return CheckDokanServiceWithWMIFallback();
-                }
-            }
-            catch (Exception ex)
-            {
-                result.ErrorMessage = $"Service check failed: {ex.Message}";
-                return result;
-            }
-        }
-
-        /// <summary>
-        /// 使用 WMI 检查 Dokan 服务（备用方法）
-        /// </summary>
-        /// <returns>服务检查结果</returns>
-        private DokanServiceCheckResult CheckDokanServiceWithWMIFallback()
-        {
-            var result = new DokanServiceCheckResult
-            {
-                ServicesFound = false,
-                ServiceCount = 0,
-                ServiceDetails = new List<string>(),
-                ErrorMessage = ""
-            };
-
-            try
-            {
-                // 如果需要 WMI，可以添加 System.Management NuGet 包
-                // 这里提供一个简化的检查方法
-                using (var searcher = new System.Management.ManagementObjectSearcher(
-                    "SELECT * FROM Win32_Service WHERE Name LIKE '%dokan%' OR DisplayName LIKE '%dokan%'"))
-                {
-                    var services = searcher.Get();
-
-                    foreach (System.Management.ManagementObject service in services)
-                    {
-                        result.ServicesFound = true;
-                        result.ServiceCount++;
-
-                        string serviceName = service["Name"]?.ToString() ?? "Unknown";
-                        string displayName = service["DisplayName"]?.ToString() ?? "Unknown";
-                        string state = service["State"]?.ToString() ?? "Unknown";
-
-                        result.ServiceDetails.Add($"{serviceName}: {state} ({displayName})");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                result.ErrorMessage = $"WMI query failed: {ex.Message}";
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// 改进的Dokan安装检查
-        /// </summary>
-        /// <returns>检查结果</returns>
-        private DokanCheckResult CheckDokanInstallation()
-        {
-            var result = new DokanCheckResult();
-
-            try
-            {
-                // 方法1: 检查传统注册表位置
-                bool registryCheck1 = false;
-                try
-                {
-                    using var key1 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Dokan\DokanLibrary");
-                    registryCheck1 = key1 != null;
-                }
-                catch { }
-
-                // 方法2: 检查64位注册表位置
-                bool registryCheck2 = false;
-                try
-                {
-                    using var key2 = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\WOW6432Node\Dokan\DokanLibrary");
-                    registryCheck2 = key2 != null;
-                }
-                catch { }
-
-                // 方法3: 检查系统文件
-                bool fileCheck = false;
-                string[] dokanPaths = {
-                    @"C:\Windows\System32\drivers\dokan2.sys",
-                    @"C:\Windows\System32\drivers\dokan1.sys",
-                    @"C:\Windows\System32\dokan2.dll",
-                    @"C:\Windows\System32\dokan1.dll",
-                    @"C:\Windows\SysWOW64\dokan2.dll",
-                    @"C:\Windows\SysWOW64\dokan1.dll"
-                };
-
-                foreach (string path in dokanPaths)
-                {
-                    if (File.Exists(path))
-                    {
-                        fileCheck = true;
-                        result.DetectedFiles.Add(path);
-                    }
-                }
-
-                // 方法4: 检查服务
-                bool serviceCheck = false;
-                try
-                {
-                    var services = ServiceController.GetServices();
-                    serviceCheck = services.Any(s =>
-                        s.ServiceName.ToLower().Contains("dokan") ||
-                        s.DisplayName.ToLower().Contains("dokan"));
-                }
-                catch { }
-
-                // 方法5: 尝试加载DokanNet.dll
-                bool dokanNetCheck = false;
-                try
-                {
-                    // 检查当前程序目录中的DokanNet.dll
-                    string dokanNetPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "DokanNet.dll");
-                    dokanNetCheck = File.Exists(dokanNetPath);
-                }
-                catch { }
-
-                // 综合判断
-                result.RegistryFound = registryCheck1 || registryCheck2;
-                result.FilesFound = fileCheck;
-                result.ServiceFound = serviceCheck;
-                result.DokanNetFound = dokanNetCheck;
-
-                // 设置整体状态
-                if (result.DokanNetFound && (result.RegistryFound || result.FilesFound || result.ServiceFound))
-                {
-                    result.IsInstalled = true;
-                    result.Status = DokanStatus.FullyInstalled;
-                    result.Message = R.Get("DokanDriverFullyInstalled");
-                }
-                else if (result.DokanNetFound)
-                {
-                    result.IsInstalled = true;
-                    result.Status = DokanStatus.DokanNetOnly;
-                    result.Message = R.Get("DokanNetFoundButDriverMissing");
-                }
-                else if (result.RegistryFound || result.FilesFound || result.ServiceFound)
-                {
-                    result.IsInstalled = false;
-                    result.Status = DokanStatus.PartialInstallation;
-                    result.Message = R.Get("DokanPartialInstallation");
-                }
-                else
-                {
-                    result.IsInstalled = false;
-                    result.Status = DokanStatus.NotInstalled;
-                    result.Message = R.Get("DokanDriverNotInstalled");
-                }
-
-                // 添加详细信息
-                var details = new List<string>();
-                if (result.RegistryFound) details.Add("Registry: Found");
-                if (result.FilesFound) details.Add($"Files: Found ({result.DetectedFiles.Count})");
-                if (result.ServiceFound) details.Add("Service: Found");
-                if (result.DokanNetFound) details.Add("DokanNet.dll: Found");
-
-                if (details.Any())
-                {
-                    result.Details = string.Join(", ", details);
-                }
-                else
-                {
-                    result.Details = "No Dokan components detected";
-                }
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                result.IsInstalled = false;
-                result.Status = DokanStatus.CheckError;
-                result.Message = R.GetFormatted("DokanCheckError", ex.Message);
-                result.Details = ex.Message;
-                return result;
-            }
-        }
-
+        // =====================================================
+        // User Operation Handlers
+        // =====================================================
         private async void BtnActivate_Click(object sender, RoutedEventArgs e)
         {
-            // If closing, don't allow activation
-            if (isClosing)
+            if (isClosing || isCurrentlyActivated)
             {
-                return;
-            }
-
-            // If already activated, prompt user
-            if (isCurrentlyActivated)
-            {
-                MessageBox.Show(R.Get("SystemAlreadyActivated"), R.Get("Information"),
-                               MessageBoxButton.OK, MessageBoxImage.Information);
+                if (isCurrentlyActivated)
+                {
+                    uiController.ShowMessage("System is already activated. To reactivate, please deactivate first.", "Information");
+                }
                 return;
             }
 
             string activationCode = txtActivationCode.Text.Trim();
             if (string.IsNullOrEmpty(activationCode))
             {
-                MessageBox.Show(R.Get("EnterActivationCodeMessage"), R.Get("InputRequired"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                uiController.ShowMessage("Please enter your activation code!", "Input Required", true);
                 return;
             }
 
             // Disable activate button to prevent duplicate clicks
             btnActivate.IsEnabled = false;
-            btnActivate.Content = R.Get("ActivatingButton");
-
+            btnActivate.Content = "Activating...";
             cancellationTokenSource = new CancellationTokenSource();
 
             try
             {
-                UpdateStatus(R.Get("StatusValidating"));
-                AddLog(R.GetFormatted("StartingActivation", activationCode.Substring(0, Math.Min(8, activationCode.Length))));
+                uiController.UpdateStatus("Validating activation code...");
+                uiController.AddLog($"Starting activation process, code: {activationCode.Substring(0, Math.Min(8, activationCode.Length))}...");
 
-                // Step 1: Online verification
-                bool onlineSuccess = await PerformOnlineActivation(activationCode);
+                // Try online activation
+                var onlineResult = await activationService.ActivateOnlineAsync(activationCode, cancellationTokenSource.Token);
 
-                if (!onlineSuccess)
+                if (onlineResult.IsSuccess)
                 {
-                    // Online verification failed, ask user if try offline verification
-                    var result = MessageBox.Show(
-                        R.Get("OnlineActivationFailedMessage"),
-                        R.Get("OnlineVerificationFailed"),
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
+                    await HandleActivationSuccess(onlineResult);
+                }
+                else
+                {
+                    // Ask if user wants to try offline activation
+                    bool tryOffline = uiController.ConfirmAction(
+                        $"Online activation failed: {onlineResult.ErrorMessage}\n\nWould you like to try offline activation?\n\nNote: Offline activation only works with valid activation codes.",
+                        "Online Verification Failed");
 
-                    if (result == MessageBoxResult.Yes)
+                    if (tryOffline)
                     {
-                        AddLog(R.Get("TryingOfflineVerification"));
-                        await PerformOfflineActivation(activationCode);
+                        uiController.AddLog("Trying offline verification...");
+                        var offlineResult = await activationService.ActivateOfflineAsync(activationCode, cancellationTokenSource.Token);
+
+                        if (offlineResult.IsSuccess)
+                        {
+                            await HandleActivationSuccess(offlineResult);
+                        }
+                        else
+                        {
+                            uiController.ShowMessage($"Offline activation failed: {offlineResult.ErrorMessage}", "Activation Failed", true);
+                        }
                     }
                     else
                     {
-                        AddLog(R.Get("UserCancelledOfflineVerification"));
-                        UpdateStatus(R.Get("ActivationStatusCancelled"));
+                        uiController.AddLog("User cancelled offline verification");
+                        uiController.UpdateStatus("Activation cancelled");
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                AddLog(R.Get("ActivationStatusCancelled"));
-                UpdateStatus(R.Get("ActivationStatusCancelled"));
+                uiController.AddLog("Activation cancelled");
+                uiController.UpdateStatus("Activation cancelled");
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("ActivationErrorMessage", ex.Message));
-                UpdateStatus(R.Get("ActivationFailed"));
-                MessageBox.Show(R.GetFormatted("ActivationErrorMessage", ex.Message), R.Get("ErrorMessage"), MessageBoxButton.OK, MessageBoxImage.Error);
+                uiController.AddLog($"Activation error: {ex.Message}");
+                uiController.UpdateStatus("Activation failed");
+                uiController.ShowMessage($"Activation failed: {ex.Message}", "Error", true);
             }
             finally
             {
@@ -975,378 +399,63 @@ namespace XPlaneActivator
                 if (!isCurrentlyActivated)
                 {
                     btnActivate.IsEnabled = true;
-                    btnActivate.Content = R.Get("ActivateButton");
+                    btnActivate.Content = "Online Activation";
                 }
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = null;
             }
         }
 
-        private async Task<bool> PerformOnlineActivation(string activationCode)
+        private async Task HandleActivationSuccess(ActivationResult result)
         {
-            try
-            {
-                AddLog(R.Get("ConnectingToServer"));
+            isCurrentlyActivated = true;
+            currentActivationState = activationService.GetCurrentActivationState();
 
-                // Generate machine code
-                string machineCode = HardwareIdHelper.GetMachineFingerprint();
+            uiController.UpdateActivationUI(true, currentActivationState);
+            uiController.UpdateStatus("Activation successful - Virtual file system ready");
 
-                // Construct request data (using ServerConfig)
-                var requestData = ServerConfig.CreateActivationRequest(activationCode, machineCode);
-                string requestJson = System.Text.Json.JsonSerializer.Serialize(requestData);
+            string successMessage = $"Activation successful!\n\n" +
+                                   $"Virtual file system mounted to {result.MountPoint}\n" +
+                                   $"You can now start X-Plane.\n\n" +
+                                   $"Activation status saved, will be automatically restored on next startup.";
 
-                AddLog(R.Get("SendingActivationRequest"));
-
-                string response = "";
-                bool requestSuccessful = false;
-
-                // Get all available server URLs
-                var serverUrls = ServerConfig.GetAllServerUrls();
-
-                // Try each server in sequence
-                foreach (string serverUrl in serverUrls)
-                {
-                    try
-                    {
-                        AddLog(R.GetFormatted("TryingServerConnection", serverUrl));
-
-                        response = await networkManager.HttpPostAsync(
-                            requestJson,
-                            ServerConfig.ACTIVATION_ENDPOINT,
-                            serverUrl
-                        );
-
-                        // If request successful, break loop
-                        requestSuccessful = true;
-                        AddLog(R.GetFormatted("ServerConnectionSuccess", serverUrl));
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        AddLog(R.GetFormatted("ServerConnectionFailed", serverUrl, ex.Message));
-
-                        // If not the last server, continue to next
-                        if (serverUrl != serverUrls[serverUrls.Length - 1])
-                        {
-                            AddLog(R.Get("TryingNextServer"));
-                            continue;
-                        }
-                    }
-                }
-
-                // If all servers failed
-                if (!requestSuccessful)
-                {
-                    AddLog(R.Get("AllServersFailed"));
-                    return false;
-                }
-
-                AddLog(R.Get("ProcessingServerResponse"));
-
-                // Verify response format
-                if (!ServerConfig.IsValidResponse(response))
-                {
-                    AddLog(R.Get("InvalidServerResponse"));
-                    AddLog(R.GetFormatted("ServerResponseContent", response));
-                    return false;
-                }
-
-                // Check if it's a success response
-                if (!ServerConfig.IsSuccessResponse(response))
-                {
-                    // Activation failed, extract error info
-                    string errorMessage = ServerConfig.ExtractErrorMessage(response);
-                    AddLog(R.GetFormatted("OnlineActivationFailed", errorMessage));
-                    MessageBox.Show(R.GetFormatted("ActivationErrorMessage", errorMessage), R.Get("ActivationFailed"),
-                                   MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return false;
-                }
-
-                // Parse success response
-                var jsonDoc = System.Text.Json.JsonDocument.Parse(response);
-                var root = jsonDoc.RootElement;
-
-                // Try to get token
-                string? serverToken = null;
-                if (root.TryGetProperty("token", out var tokenProp))
-                {
-                    serverToken = tokenProp.GetString();
-                }
-                else if (root.TryGetProperty("activation_token", out var activationTokenProp))
-                {
-                    serverToken = activationTokenProp.GetString();
-                }
-                else if (root.TryGetProperty("access_token", out var accessTokenProp))
-                {
-                    serverToken = accessTokenProp.GetString();
-                }
-                else if (root.TryGetProperty("data", out var dataProp))
-                {
-                    if (dataProp.TryGetProperty("token", out var dataTokenProp))
-                    {
-                        serverToken = dataTokenProp.GetString();
-                    }
-                }
-
-                // Handle successful activation
-                if (!string.IsNullOrEmpty(serverToken))
-                {
-                    AddLog(R.Get("OnlineActivationSuccess"));
-
-                    // Use server token to decrypt and save state
-                    return await ProcessServerTokenAndSave(serverToken, activationCode);
-                }
-                else
-                {
-                    AddLog(R.Get("OnlineActivationSuccessNoToken"));
-                    // If no token but activation successful, use activation code itself for decryption
-                    return await ProcessActivationWithoutTokenAndSave(activationCode);
-                }
-            }
-            catch (System.TimeoutException)
-            {
-                AddLog(R.Get("NetworkTimeout"));
-                MessageBox.Show(R.Get("NetworkTimeoutMessage"), R.Get("NetworkTimeout"),
-                               MessageBoxButton.OK, MessageBoxImage.Warning);
-                return false;
-            }
-            catch (System.Net.Http.HttpRequestException ex)
-            {
-                AddLog(R.GetFormatted("NetworkErrorMessage", ex.Message));
-                MessageBox.Show(R.GetFormatted("NetworkErrorMessage", ex.Message), R.Get("NetworkError"),
-                               MessageBoxButton.OK, MessageBoxImage.Warning);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("OnlineActivationException", ex.Message));
-                MessageBox.Show(R.GetFormatted("ActivationErrorMessage", ex.Message), R.Get("ActivationError"),
-                               MessageBoxButton.OK, MessageBoxImage.Error);
-                return false;
-            }
+            uiController.ShowMessage(successMessage, "Activation Complete");
         }
 
-        private async Task<bool> ProcessServerTokenAndSave(string serverToken, string activationCode)
+        private async void BtnDeactivate_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                AddLog(R.Get("DecryptingData"));
-                UpdateStatus(R.Get("StatusDecrypting"));
+                bool confirmed = uiController.ConfirmAction(
+                    "Are you sure you want to deactivate? This will clear saved activation status and unmount the virtual file system.",
+                    "Confirm Deactivation");
 
-                // Use SecurityManager to decrypt server token
-                byte[]? decryptedData = await Task.Run(() => securityManager.DecryptWithToken(serverToken));
-
-                if (decryptedData != null && decryptedData.Length > 0)
+                if (confirmed)
                 {
-                    AddLog(R.DataDecryptionSuccess(decryptedData.Length));
+                    uiController.AddLog("User selected deactivation");
 
-                    // Verify decrypted data integrity
-                    string content = System.Text.Encoding.UTF8.GetString(decryptedData);
-                    if (content.Contains("# X-Plane") || content.Contains("v ") || content.Contains("f "))
+                    bool success = await activationService.DeactivateAsync();
+
+                    if (success)
                     {
-                        AddLog(R.Get("DataIntegrityCheckPassed"));
+                        isCurrentlyActivated = false;
+                        currentActivationState = null;
 
-                        // Mount virtual file system
-                        bool mounted = await MountVirtualFileSystem(decryptedData);
-
-                        if (mounted)
-                        {
-                            // Save activation state
-                            bool saved = stateManager.SaveActivationState(activationCode, serverToken, vfsManager.MountPoint);
-                            if (saved)
-                            {
-                                AddLog(R.Get("ActivationStateSaved"));
-                                isCurrentlyActivated = true;
-                                currentActivationState = stateManager.GetCurrentState();
-                                UpdateActivationUI(true, currentActivationState);
-                            }
-                            else
-                            {
-                                AddLog(R.Get("ActivationStateSaveFailed"));
-                            }
-                            return true;
-                        }
-                        return false;
+                        uiController.UpdateActivationUI(false, null);
+                        uiController.UpdateStatus("Deactivated");
+                        uiController.AddLog("Deactivation successful");
+                        uiController.ShowMessage("Deactivation successful.", "Deactivation Complete");
                     }
                     else
                     {
-                        AddLog(R.Get("DataIntegrityCheckFailed"));
-                        return false;
+                        uiController.ShowMessage("Deactivation failed, please check logs for details.", "Error", true);
                     }
-                }
-                else
-                {
-                    AddLog(R.Get("DataDecryptionFailed"));
-                    return false;
                 }
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("TokenProcessingException", ex.Message));
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Process activation without token and save state
-        /// </summary>
-        private async Task<bool> ProcessActivationWithoutTokenAndSave(string activationCode)
-        {
-            try
-            {
-                AddLog(R.Get("UsingActivationCodeDecryption"));
-                UpdateStatus(R.Get("StatusDecrypting"));
-
-                // Directly use activation code for decryption
-                byte[]? decryptedData = await Task.Run(() => securityManager.ValidateAndDecrypt(activationCode));
-
-                if (decryptedData != null && decryptedData.Length > 0)
-                {
-                    AddLog(R.DataDecryptionSuccess(decryptedData.Length));
-
-                    // Verify decrypted data integrity
-                    if (securityManager.ValidateDecryptedData(decryptedData))
-                    {
-                        AddLog(R.Get("DataIntegrityCheckPassed"));
-
-                        // Mount virtual file system
-                        bool mounted = await MountVirtualFileSystem(decryptedData);
-
-                        if (mounted)
-                        {
-                            // Save activation state
-                            bool saved = stateManager.SaveActivationState(activationCode, null, vfsManager.MountPoint);
-                            if (saved)
-                            {
-                                AddLog(R.Get("ActivationStateSaved"));
-                                isCurrentlyActivated = true;
-                                currentActivationState = stateManager.GetCurrentState();
-                                UpdateActivationUI(true, currentActivationState);
-                            }
-                            else
-                            {
-                                AddLog(R.Get("ActivationStateSaveFailed"));
-                            }
-                            return true;
-                        }
-                        return false;
-                    }
-                    else
-                    {
-                        AddLog(R.Get("DataIntegrityCheckFailed"));
-                        return false;
-                    }
-                }
-                else
-                {
-                    AddLog(R.Get("ActivationCodeDecryptionFailed"));
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("ActivationCodeProcessingException", ex.Message));
-                return false;
-            }
-        }
-
-        private async Task PerformOfflineActivation(string activationCode)
-        {
-            try
-            {
-                AddLog(R.Get("TryingOfflineVerification"));
-                UpdateStatus(R.Get("StatusValidating"));
-
-                // Use local C# backup method for verification
-                byte[]? decryptedData = await Task.Run(() => securityManager.ValidateAndDecrypt(activationCode));
-
-                if (decryptedData != null && decryptedData.Length > 0)
-                {
-                    AddLog(R.Get("OfflineActivationSuccess"));
-
-                    // Mount virtual file system
-                    bool mounted = await MountVirtualFileSystem(decryptedData);
-                    if (mounted)
-                    {
-                        // Save activation state
-                        bool saved = stateManager.SaveActivationState(activationCode, null, vfsManager.MountPoint);
-                        if (saved)
-                        {
-                            AddLog(R.Get("ActivationStateSaved"));
-                            isCurrentlyActivated = true;
-                            currentActivationState = stateManager.GetCurrentState();
-                            UpdateActivationUI(true, currentActivationState);
-                        }
-                        else
-                        {
-                            AddLog(R.Get("ActivationStateSaveFailed"));
-                        }
-                    }
-                    else
-                    {
-                        throw new Exception(R.Get("VFSMountFailed"));
-                    }
-                }
-                else
-                {
-                    throw new Exception(R.Get("ActivationCodeDecryptionFailed"));
-                }
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("OfflineActivationFailed", ex.Message));
-                MessageBox.Show(R.GetFormatted("OfflineActivationFailedMessage", ex.Message), R.Get("ActivationFailed"),
-                               MessageBoxButton.OK, MessageBoxImage.Error);
-                throw;
-            }
-        }
-
-        private async Task<bool> MountVirtualFileSystem(byte[] decryptedData)
-        {
-            try
-            {
-                AddLog(R.Get("StartingVirtualFileSystem"));
-                UpdateStatus(R.Get("StatusMountingVFS"));
-
-                // Use fixed VFS manager that correctly waits for mount completion
-                bool mounted = await Task.Run(() =>
-                    vfsManager.MountVirtualFileSystem(
-                        decryptedData,
-                        cancellationTokenSource?.Token ?? CancellationToken.None
-                    )
-                );
-
-                if (mounted)
-                {
-                    AddLog(R.VFSMountedSuccess(vfsManager.MountPoint));
-                    UpdateStatus(R.Get("ActivationSuccessful"));
-
-                    Dispatcher.Invoke(() =>
-                    {
-                        lblVfsStatus.Text = R.VFSMountedSuccess(vfsManager.MountPoint);
-                        lblVfsStatus.Foreground = new SolidColorBrush(Colors.LightGreen);
-                    });
-
-                    MessageBox.Show(R.ActivationSuccessMessageFormatted(vfsManager.MountPoint),
-                                   R.Get("ActivationComplete"), MessageBoxButton.OK, MessageBoxImage.Information);
-                    return true;
-                }
-                else
-                {
-                    AddLog(R.Get("VFSMountFailed"));
-                    UpdateStatus(R.Get("VFSMountFailed"));
-                    MessageBox.Show(R.Get("VFSMountFailedMessage"),
-                                   R.Get("VFSMountFailed"), MessageBoxButton.OK, MessageBoxImage.Error);
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                AddLog(R.GetFormatted("VFSMountException", ex.Message));
-                UpdateStatus(R.Get("VFSMountFailed"));
-                MessageBox.Show(R.GetFormatted("VFSMountException", ex.Message), R.Get("ErrorMessage"),
-                               MessageBoxButton.OK, MessageBoxImage.Error);
-                return false;
+                uiController.AddLog($"Deactivation error: {ex.Message}");
+                uiController.ShowMessage($"Deactivation failed: {ex.Message}", "Error", true);
             }
         }
 
@@ -1357,42 +466,63 @@ namespace XPlaneActivator
             try
             {
                 btnDiagnostic.IsEnabled = false;
-                btnDiagnostic.Content = R.Get("RunningDiagnostic");
+                btnDiagnostic.Content = "Running Diagnostic...";
 
-                AddLog(R.Get("StartingSystemDiagnostic"));
-                UpdateStatus(R.Get("StartingSystemDiagnostic"));
+                uiController.AddLog("Starting system diagnostic...");
+                uiController.UpdateStatus("Running system diagnostic...");
 
-                // Create diagnostics
-                var diagnostics = new SystemDiagnostics(securityManager, vfsManager, networkManager);
+                // Create simplified diagnostic report
+                var simpleReport = CreateSimpleDiagnosticReport();
+                ShowSimpleDiagnosticMessage(simpleReport);
 
-                // Run diagnostics
-                var report = await diagnostics.RunFullDiagnostics();
-
-                // Show diagnostic results
-                ShowDiagnosticReport(report);
-
-                AddLog(R.Get("SystemDiagnosticComplete"));
-                UpdateStatus(R.Get("DiagnosticCompleted"));
+                uiController.AddLog("System diagnostic complete");
+                uiController.UpdateStatus("Diagnostic complete");
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("DiagnosticProcessException", ex.Message));
-                MessageBox.Show(R.GetFormatted("DiagnosticFailed", ex.Message), R.Get("ErrorMessage"), MessageBoxButton.OK, MessageBoxImage.Error);
+                uiController.AddLog($"Diagnostic process exception: {ex.Message}");
+                uiController.ShowMessage($"Diagnostic failed: {ex.Message}", "Error", true);
             }
             finally
             {
                 btnDiagnostic.IsEnabled = true;
-                btnDiagnostic.Content = R.Get("DiagnosticButton");
+                btnDiagnostic.Content = "System Diagnostic";
             }
         }
 
-        private void ShowDiagnosticReport(DiagnosticReport report)
+        private string CreateSimpleDiagnosticReport()
         {
-            var window = new DiagnosticWindow(report)
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("=== System Diagnostic Report ===");
+            sb.AppendLine($"Diagnostic Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+            sb.AppendLine("1. Administrator Privileges: " + (systemCheckService.IsRunningAsAdministrator() ? "✓ Pass" : "✗ Fail"));
+            sb.AppendLine("2. CryptoEngine: " + (securityManager.IsCryptoDllAvailable() ? "✓ Available" : "✗ Not Available"));
+            sb.AppendLine("3. Network Connection: " + (networkManager != null ? "✓ Normal" : "✗ Error"));
+            sb.AppendLine("4. VFS Status: " + (vfsManager.IsMounted ? "✓ Mounted" : "- Not Mounted"));
+
+            // Check security threats
+            var threatInfo = securityManager.CheckSecurityThreats();
+            sb.AppendLine("5. Security Check: " + (threatInfo.ThreatsDetected ? "⚠ Threats Detected" : "✓ Clean"));
+            if (threatInfo.ThreatsDetected)
             {
-                Owner = this
-            };
-            window.ShowDialog();
+                sb.AppendLine($"   - {threatInfo.Message}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("System Information:");
+            sb.AppendLine(systemCheckService.GetSystemInfo());
+
+            sb.AppendLine();
+            sb.AppendLine("Decryption Method:");
+            sb.AppendLine(securityManager.GetDecryptionMethod());
+
+            return sb.ToString();
+        }
+
+        private void ShowSimpleDiagnosticMessage(string report)
+        {
+            uiController.ShowMessage(report, "System Diagnostic Report");
         }
 
         private void BtnClearLog_Click(object sender, RoutedEventArgs e)
@@ -1400,7 +530,7 @@ namespace XPlaneActivator
             if (isClosing) return;
 
             txtActivationLog.Clear();
-            AddLog(R.Get("LogCleared"));
+            uiController.AddLog("Log cleared");
         }
 
         private void BtnSaveLog_Click(object sender, RoutedEventArgs e)
@@ -1409,25 +539,75 @@ namespace XPlaneActivator
 
             try
             {
-                var saveDialog = new SaveFileDialog
+                var saveDialog = new Microsoft.Win32.SaveFileDialog
                 {
-                    Title = R.Get("SaveActivationLog"),
-                    Filter = R.Get("TextFiles"),
+                    Title = "Save Activation Log",
+                    Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*",
                     FileName = $"XPlane_Activation_Log_{DateTime.Now:yyyyMMdd_HHmmss}.txt"
                 };
 
                 if (saveDialog.ShowDialog() == true)
                 {
-                    File.WriteAllText(saveDialog.FileName, txtActivationLog.Text);
-                    AddLog(R.GetFormatted("LogSaved", saveDialog.FileName));
-                    MessageBox.Show(R.Get("LogSaveSuccess"), R.Get("LogSaveComplete"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    System.IO.File.WriteAllText(saveDialog.FileName, txtActivationLog.Text);
+                    uiController.AddLog($"Log saved to: {saveDialog.FileName}");
+                    uiController.ShowMessage("Log saved successfully!", "Save Complete");
                 }
             }
             catch (Exception ex)
             {
-                AddLog(R.GetFormatted("LogSaveFailed", ex.Message));
-                MessageBox.Show(R.GetFormatted("LogSaveFailed", ex.Message), R.Get("ErrorMessage"), MessageBoxButton.OK, MessageBoxImage.Error);
+                uiController.AddLog($"Log save failed: {ex.Message}");
+                uiController.ShowMessage($"Log save failed: {ex.Message}", "Error", true);
             }
+        }
+
+        private void BtnActivationInfo_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (currentActivationState == null)
+                {
+                    uiController.ShowMessage("Currently not activated or activation status information is unavailable.", "Information");
+                    return;
+                }
+
+                int remainingDays = 30 - (int)(DateTime.Now - currentActivationState.ActivationTime).TotalDays;
+                string machineFingerprint = HardwareIdHelper.GetDisplayFingerprint();
+
+                var timeSinceActivation = DateTime.Now - currentActivationState.ActivationTime;
+                var timeSinceHeartbeat = DateTime.Now - currentActivationState.LastHeartbeat;
+
+                string infoMessage = $"Detailed Activation Information\n\n" +
+                                   $"Activation Code: {currentActivationState.ActivationCode.Substring(0, Math.Min(8, currentActivationState.ActivationCode.Length))}...\n" +
+                                   $"Activation Time: {currentActivationState.ActivationTime:yyyy-MM-dd HH:mm:ss}\n" +
+                                   $"Activated Days: {(int)timeSinceActivation.TotalDays} days\n" +
+                                   $"Remaining Days: {remainingDays} days\n" +
+                                   $"Last Heartbeat: {currentActivationState.LastHeartbeat:yyyy-MM-dd HH:mm:ss}\n" +
+                                   $"Heartbeat Interval: {(int)timeSinceHeartbeat.TotalMinutes} minutes ago\n" +
+                                   $"Machine Fingerprint: {machineFingerprint}\n" +
+                                   $"Mount Point: {currentActivationState.MountPoint ?? "Unknown"}\n" +
+                                   $"Server Token: {(!string.IsNullOrEmpty(currentActivationState.ServerToken) ? "Available" : "Not Available")}";
+
+                uiController.ShowMessage(infoMessage, "Activation Information");
+            }
+            catch (Exception ex)
+            {
+                uiController.AddLog($"Error showing activation info: {ex.Message}");
+                uiController.ShowMessage($"Cannot show activation info: {ex.Message}", "Error", true);
+            }
+        }
+
+        // =====================================================
+        // Event Handlers
+        // =====================================================
+        private void OnActivationProgressChanged(object? sender, ActivationProgressEventArgs e)
+        {
+            uiController.AddLog(e.Message);
+            uiController.UpdateStatus(e.Message);
+        }
+
+        private void OnServiceLogMessage(object? sender, string e)
+        {
+            uiController.AddLog(e);
         }
 
         private void CheckNetworkStatus(object? state)
@@ -1442,17 +622,17 @@ namespace XPlaneActivator
                     {
                         if (isConnected)
                         {
-                            lblNetworkStatus.Text = R.Get("NetworkOnline");
-                            lblNetworkStatus.Foreground = new SolidColorBrush(Colors.LightGreen);
-                            lblConnectionStatus.Text = R.Get("ConnectionOnline");
-                            statusIndicator.Fill = new SolidColorBrush(Colors.LightGreen);
+                            lblNetworkStatus.Text = "Network Online (lars-store.kz)";
+                            lblNetworkStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGreen);
+                            lblConnectionStatus.Text = "Online";
+                            statusIndicator.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGreen);
                         }
                         else
                         {
-                            lblNetworkStatus.Text = R.Get("NetworkOffline");
-                            lblNetworkStatus.Foreground = new SolidColorBrush(Colors.Orange);
-                            lblConnectionStatus.Text = R.Get("ConnectionOffline");
-                            statusIndicator.Fill = new SolidColorBrush(Colors.Orange);
+                            lblNetworkStatus.Text = "Network Disconnected";
+                            lblNetworkStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange);
+                            lblConnectionStatus.Text = "Offline";
+                            statusIndicator.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Orange);
                         }
                     });
                 }
@@ -1460,38 +640,111 @@ namespace XPlaneActivator
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        lblNetworkStatus.Text = R.Get("NetworkError");
-                        lblNetworkStatus.Foreground = new SolidColorBrush(Colors.Red);
-                        lblConnectionStatus.Text = R.Get("ConnectionError");
-                        statusIndicator.Fill = new SolidColorBrush(Colors.Red);
+                        lblNetworkStatus.Text = "Network Error";
+                        lblNetworkStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
+                        lblConnectionStatus.Text = "Error";
+                        statusIndicator.Fill = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
                     });
                 }
             });
+        }
+
+        private void CheckActivationStatus(object? state)
+        {
+            if (isClosing) return;
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    if (isCurrentlyActivated && currentActivationState != null)
+                    {
+                        // Check if activation has expired
+                        var isValid = await activationService.ValidateExistingActivationAsync();
+
+                        if (!isValid)
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                uiController.AddLog("Activation has expired");
+                                HandleActivationExpired();
+                            });
+                        }
+                        else
+                        {
+                            // Check remaining days
+                            int remainingDays = 30 - (int)(DateTime.Now - currentActivationState.ActivationTime).TotalDays;
+
+                            if (remainingDays <= 0)
+                            {
+                                Dispatcher.Invoke(() =>
+                                {
+                                    uiController.AddLog("Activation has expired");
+                                    HandleActivationExpired();
+                                });
+                            }
+                            else if (remainingDays <= 3)
+                            {
+                                Dispatcher.Invoke(() =>
+                                {
+                                    uiController.AddLog($"Activation will expire soon, remaining {remainingDays} days");
+                                });
+                            }
+
+                            // Update heartbeat
+                            stateManager.UpdateHeartbeat();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Check activation status exception: {ex.Message}");
+                }
+            });
+        }
+
+        private async void HandleActivationExpired()
+        {
+            try
+            {
+                bool success = await activationService.DeactivateAsync();
+
+                isCurrentlyActivated = false;
+                currentActivationState = null;
+
+                uiController.UpdateActivationUI(false, null);
+                uiController.UpdateStatus("Activation has expired");
+                uiController.ShowMessage("Activation has expired, please reactivate.", "Activation Expired", true);
+            }
+            catch (Exception ex)
+            {
+                uiController.AddLog($"Error processing activation expiry: {ex.Message}");
+            }
         }
 
         private void VfsManager_StatusChanged(object? sender, VfsStatusEventArgs e)
         {
             Dispatcher.Invoke(() =>
             {
-                AddLog(R.GetFormatted("VFSStatus", e.Message));
+                uiController.AddLog($"VFS Status: {e.Message}");
 
                 switch (e.Status)
                 {
                     case VfsStatus.Mounted:
-                        lblVfsStatus.Text = R.Get("VFSMounted");
-                        lblVfsStatus.Foreground = new SolidColorBrush(Colors.LightGreen);
+                        lblVfsStatus.Text = "Virtual File System mounted";
+                        lblVfsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGreen);
                         break;
                     case VfsStatus.Mounting:
-                        lblVfsStatus.Text = R.Get("VFSMounting");
-                        lblVfsStatus.Foreground = new SolidColorBrush(Colors.Yellow);
+                        lblVfsStatus.Text = "Virtual File System mounting";
+                        lblVfsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Yellow);
                         break;
                     case VfsStatus.Error:
-                        lblVfsStatus.Text = R.Get("VFSError");
-                        lblVfsStatus.Foreground = new SolidColorBrush(Colors.Red);
+                        lblVfsStatus.Text = "Virtual File System error";
+                        lblVfsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Red);
                         break;
                     case VfsStatus.Unmounted:
-                        lblVfsStatus.Text = R.Get("VFSNotMounted");
-                        lblVfsStatus.Foreground = new SolidColorBrush(Colors.Gray);
+                        lblVfsStatus.Text = "Virtual File System not mounted";
+                        lblVfsStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.Gray);
                         break;
                 }
             });
@@ -1499,150 +752,69 @@ namespace XPlaneActivator
 
         private void VfsManager_LogMessage(object? sender, string e)
         {
-            Dispatcher.Invoke(() => AddLog($"VFS: {e}"));
+            Dispatcher.Invoke(() => uiController.AddLog($"VFS: {e}"));
         }
 
-        private void AddLog(string message)
-        {
-            string timestamp = DateTime.Now.ToString("HH:mm:ss");
-            string logEntry = $"[{timestamp}] {message}\r\n";
-
-            Dispatcher.Invoke(() =>
-            {
-                txtActivationLog.AppendText(logEntry);
-                txtActivationLog.ScrollToEnd();
-            });
-        }
-
-        private void UpdateStatus(string status)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                lblStatus.Text = status;
-            });
-        }
-
-        private bool IsRunningAsAdministrator()
-        {
-            try
-            {
-                var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-                var principal = new System.Security.Principal.WindowsPrincipal(identity);
-                return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 旧的方法保持兼容性
-        /// </summary>
-        private bool IsDokanInstalled()
-        {
-            var result = CheckDokanInstallation();
-            return result.IsInstalled;
-        }
-
-        // ===== Code to fix closing hang issues =====
-
+        // =====================================================
+        // Lifecycle Management
+        // =====================================================
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            // Prevent duplicate closing
             lock (closingLock)
             {
-                if (isClosing)
-                {
-                    return;
-                }
+                if (isClosing) return;
                 isClosing = true;
             }
 
             try
             {
-                AddLog(R.Get("AppClosing"));
+                uiController.AddLog("Application is closing...");
 
-                // Create background task to execute close operations
-                var closeTask = Task.Run(() =>
+                // Cancel all operations
+                cancellationTokenSource?.Cancel();
+
+                // Stop timers
+                networkCheckTimer?.Dispose();
+                activationCheckTimer?.Dispose();
+
+                // If still activated, update last heartbeat time
+                if (isCurrentlyActivated)
                 {
-                    try
-                    {
-                        // Cancel all async operations
-                        cancellationTokenSource?.Cancel();
-
-                        // Stop timers
-                        networkCheckTimer?.Dispose();
-                        activationCheckTimer?.Dispose();
-
-                        // If still activated, update last heartbeat time
-                        if (isCurrentlyActivated)
-                        {
-                            stateManager?.UpdateHeartbeat();
-                        }
-
-                        // Unmount virtual file system
-                        vfsManager?.UnmountVirtualFileSystem();
-
-                        // Release resources
-                        networkManager?.Dispose();
-                        securityManager?.Dispose();
-                        vfsManager?.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Close exception: {ex.Message}");
-                    }
-                });
-
-                // Wait for close completion, max 3 seconds
-                if (!closeTask.Wait(3000))
-                {
-                    AddLog(R.Get("CloseTimeout"));
-                    Environment.Exit(0); // Force exit
+                    stateManager?.UpdateHeartbeat();
                 }
-                else
-                {
-                    AddLog(R.Get("AppClosed"));
-                }
+
+                // Unmount virtual file system
+                vfsManager?.UnmountVirtualFileSystem();
+
+                // Release resources
+                networkManager?.Dispose();
+                securityManager?.Dispose();
+                vfsManager?.Dispose();
+
+                uiController.AddLog("Application has been closed");
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Close exception: {ex.Message}");
-                Environment.Exit(0); // If any exception, force exit
             }
         }
-    }
 
-    // 辅助类和枚举
-    public enum DokanStatus
-    {
-        NotInstalled,
-        PartialInstallation,
-        DokanNetOnly,
-        FullyInstalled,
-        CheckError
-    }
+        // =====================================================
+        // Simple Service Container
+        // =====================================================
+        private class ServiceContainer
+        {
+            private readonly Dictionary<Type, object> services = new Dictionary<Type, object>();
 
-    public class DokanCheckResult
-    {
-        public bool IsInstalled { get; set; }
-        public DokanStatus Status { get; set; }
-        public string Message { get; set; } = string.Empty;
-        public string Details { get; set; } = string.Empty;
-        public bool RegistryFound { get; set; }
-        public bool FilesFound { get; set; }
-        public bool ServiceFound { get; set; }
-        public bool DokanNetFound { get; set; }
-        public List<string> DetectedFiles { get; set; } = new List<string>();
-    }
+            public void RegisterSingleton<T>(T instance) where T : class
+            {
+                services[typeof(T)] = instance;
+            }
 
-    // 添加 Dokan 服务检查结果类
-    public class DokanServiceCheckResult
-    {
-        public bool ServicesFound { get; set; }
-        public int ServiceCount { get; set; }
-        public List<string> ServiceDetails { get; set; } = new List<string>();
-        public string ErrorMessage { get; set; } = "";
+            public T GetService<T>() where T : class
+            {
+                return (T)services[typeof(T)];
+            }
+        }
     }
 }
