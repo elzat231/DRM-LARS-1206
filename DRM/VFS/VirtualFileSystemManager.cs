@@ -80,12 +80,12 @@ namespace DRM.VFS
         Task<bool> MountAsync(CancellationToken cancellationToken = default);
         Task<bool> UnmountAsync();
         void ForceUnmount();
-        void SetVirtualData(byte[] data); // 单文件兼容
-        void SetVirtualFiles(Dictionary<string, byte[]> files); // 多文件支持
-        void AddVirtualFile(string fileName, byte[] data); // 添加单个文件
-        void RemoveVirtualFile(string fileName); // 移除文件
-        void ClearVirtualFiles(); // 清除所有文件
-        List<string> GetVirtualFileNames(); // 获取所有文件名
+        void SetVirtualData(byte[] data);
+        void SetVirtualFiles(Dictionary<string, byte[]> files);
+        void AddVirtualFile(string fileName, byte[] data);
+        void RemoveVirtualFile(string fileName);
+        void ClearVirtualFiles();
+        List<string> GetVirtualFileNames();
         void SetMountPoint(string mountPoint);
         void SetAccessMode(VfsAccessMode mode);
         void AddAllowedProcess(string processName);
@@ -95,13 +95,13 @@ namespace DRM.VFS
     }
 
     // =====================================================
-    // 修复后的访问控制器 - 更宽松的权限控制以便看到文件内容
+    // 修复后的访问控制器 - 解决文件内容无法查看问题
     // =====================================================
 
     internal class VFSAccessController
     {
         private readonly HashSet<string> allowedProcesses = new();
-        private VfsAccessMode accessMode = VfsAccessMode.AllowAll; // 改为更宽松的默认模式
+        private VfsAccessMode accessMode = VfsAccessMode.AllowAll;
         private DateTime? lastAccessTime = null;
         private int accessAttemptCount = 0;
         private readonly object accessLock = new();
@@ -114,23 +114,41 @@ namespace DRM.VFS
 
         public VFSAccessController()
         {
-            // 允许更多进程以便调试和查看文件内容
-            allowedProcesses.Add("x-plane");
-            allowedProcesses.Add("xplane");
-            allowedProcesses.Add("x-plane 12");
-            allowedProcesses.Add("drm");
-            allowedProcesses.Add("xplaneactivator");
-            allowedProcesses.Add("system");
-            allowedProcesses.Add("explorer");
-            allowedProcesses.Add("notepad");
-            allowedProcesses.Add("notepad++");
-            allowedProcesses.Add("code");
-            allowedProcesses.Add("devenv");
-            allowedProcesses.Add("cmd");
-            allowedProcesses.Add("powershell");
-            allowedProcesses.Add("conhost");
+            // 系统关键进程 - 总是允许访问
+            var systemProcesses = new[]
+            {
+                "system", "explorer", "notepad", "notepad++", "code", "devenv",
+                "cmd", "powershell", "conhost", "dwm", "winlogon", "csrss",
+                "svchost", "services", "lsass", "smss", "wininit"
+            };
 
-            System.Diagnostics.Debug.WriteLine("[VFSAccessController] Initialized with relaxed whitelist for file content access");
+            // X-Plane相关进程
+            var xplaneProcesses = new[]
+            {
+                "x-plane", "xplane", "x-plane 12", "x-plane12", "x-plane_12"
+            };
+
+            // 开发和调试工具
+            var devProcesses = new[]
+            {
+                "visual studio", "rider", "clion", "qtcreator", "debugger",
+                "procmon", "procexp", "filemon", "regmon", "wireshark"
+            };
+
+            // 文件管理和查看工具
+            var fileTools = new[]
+            {
+                "totalcmd", "winrar", "7zip", "notepadplusplus", "sublimetext",
+                "atom", "brackets", "vim", "emacs", "hexedit", "hxd", "010editor"
+            };
+
+            foreach (var process in systemProcesses.Concat(xplaneProcesses)
+                .Concat(devProcesses).Concat(fileTools))
+            {
+                allowedProcesses.Add(process.ToLowerInvariant());
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Initialized with {allowedProcesses.Count} allowed process patterns");
         }
 
         public bool CheckAccess(int processId, string processName, string fileName)
@@ -166,26 +184,26 @@ namespace DRM.VFS
                             break;
                     }
 
-                    // 更宽松的速率限制检查
-                    if (eventArgs.AccessGranted && !CheckRateLimit(processName))
-                    {
-                        // 不阻止访问，只记录警告
-                        System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Rate limit warning for {processName}, but allowing access");
-                    }
-
                     // 更新访问统计
                     if (eventArgs.AccessGranted)
                     {
                         processAccessCount[processName] = processAccessCount.GetValueOrDefault(processName, 0) + 1;
                         lastProcessAccess[processName] = DateTime.Now;
                     }
+
+                    // 详细日志记录
+                    System.Diagnostics.Debug.WriteLine($"[VFSAccessController] {(eventArgs.AccessGranted ? "✅ ALLOW" : "❌ DENY")}: {processName} (PID:{processId}) -> {fileName}");
+                    if (!string.IsNullOrEmpty(eventArgs.Reason))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Reason: {eventArgs.Reason}");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    // 出现异常时，默认允许访问以便调试
+                    // 出现异常时，默认允许访问以确保文件可读
                     eventArgs.AccessGranted = true;
                     eventArgs.Reason = $"Exception occurred, allowing access: {ex.Message}";
-                    System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Access check exception: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[VFSAccessController] ⚠ Exception in access check, allowing: {ex.Message}");
                 }
 
                 AccessAttempted?.Invoke(this, eventArgs);
@@ -198,69 +216,76 @@ namespace DRM.VFS
             reason = "";
             try
             {
-                // 检查进程名是否在白名单中
                 string lowerProcessName = processName.ToLowerInvariant();
-                bool isInWhitelist = allowedProcesses.Any(allowed =>
-                    lowerProcessName.Contains(allowed.ToLowerInvariant()) ||
-                    allowed.ToLowerInvariant().Contains(lowerProcessName));
 
-                if (!isInWhitelist)
+                // 1. 检查系统关键进程（总是允许）
+                string[] criticalProcesses = {
+                    "system", "explorer", "dwm", "winlogon", "csrss", "svchost"
+                };
+
+                bool isCriticalProcess = criticalProcesses.Any(proc =>
+                    lowerProcessName.Contains(proc) || lowerProcessName.Equals(proc));
+
+                if (isCriticalProcess)
                 {
-                    // 对于未知进程，也允许访问但记录日志
-                    reason = $"Process '{processName}' not in whitelist, but allowing for debugging";
-                    System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Unknown process access: {processName} (PID: {processId})");
-                    return true; // 改为允许访问
+                    reason = $"Critical system process allowed: {processName}";
+                    return true;
                 }
 
-                // 额外验证：检查进程是否真实存在且可访问
+                // 2. 检查基本白名单
+                bool isInWhitelist = allowedProcesses.Any(allowed =>
+                    lowerProcessName.Contains(allowed) || allowed.Contains(lowerProcessName));
+
+                if (isInWhitelist)
+                {
+                    reason = $"Process in whitelist: {processName}";
+                    return true;
+                }
+
+                // 3. 检查文件管理和查看相关进程
+                string[] fileViewerProcesses = {
+                    "notepad", "wordpad", "write", "edit", "type", "more", "less",
+                    "cat", "head", "tail", "grep", "find", "search"
+                };
+
+                bool isFileViewer = fileViewerProcesses.Any(viewer =>
+                    lowerProcessName.Contains(viewer));
+
+                if (isFileViewer)
+                {
+                    reason = $"File viewer process allowed: {processName}";
+                    return true;
+                }
+
+                // 4. 验证进程是否真实存在且可访问
                 try
                 {
-                    var process = Process.GetProcessById(processId);
-                    if (process.HasExited)
+                    if (processId > 0)
                     {
-                        reason = $"Process '{processName}' has exited, but allowing access";
-                        return true; // 改为允许访问
+                        var process = Process.GetProcessById(processId);
+                        if (!process.HasExited)
+                        {
+                            // 进程存在，记录但仍然允许访问（用于调试和兼容性）
+                            reason = $"Valid process, allowing for compatibility: {processName}";
+                            return true;
+                        }
                     }
-
-                    reason = $"Process '{processName}' (PID: {processId}) verified and allowed";
-                    return true;
                 }
                 catch (Exception ex)
                 {
-                    reason = $"Process verification failed, but allowing access: {ex.Message}";
-                    return true; // 改为允许访问
+                    System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Process validation error: {ex.Message}");
                 }
+
+                // 5. 默认策略：记录未知进程但允许访问（确保文件内容可读）
+                reason = $"Unknown process, allowing for file access: {processName}";
+                System.Diagnostics.Debug.WriteLine($"[VFSAccessController] ⚠ Unknown process accessing files: {processName} (PID: {processId})");
+                return true; // 关键修复：允许未知进程访问以确保文件内容可读
             }
             catch (Exception ex)
             {
-                reason = $"Whitelist check error, allowing access: {ex.Message}";
-                return true; // 改为允许访问
+                reason = $"Access check error, allowing: {ex.Message}";
+                return true;
             }
-        }
-
-        private bool CheckRateLimit(string processName)
-        {
-            var currentTime = DateTime.Now;
-
-            // 更宽松的速率限制
-            if (lastProcessAccess.TryGetValue(processName, out DateTime lastAccess))
-            {
-                if ((currentTime - lastAccess).TotalMilliseconds < 1) // 1ms 限制（更宽松）
-                {
-                    int accessCount = processAccessCount.GetValueOrDefault(processName, 0);
-                    if (accessCount > 1000) // 每1ms最多1000次访问（更宽松）
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    // 重置计数器
-                    processAccessCount[processName] = 0;
-                }
-            }
-
-            return true;
         }
 
         public void AddAllowedProcess(string processName)
@@ -268,7 +293,7 @@ namespace DRM.VFS
             if (!string.IsNullOrWhiteSpace(processName))
             {
                 allowedProcesses.Add(processName.ToLowerInvariant());
-                System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Added allowed process: {processName}");
+                System.Diagnostics.Debug.WriteLine($"[VFSAccessController] Added process to whitelist: {processName}");
             }
         }
 
@@ -288,7 +313,7 @@ namespace DRM.VFS
     }
 
     // =====================================================
-    // 多文件提供器 - 保持不变
+    // 修复后的文件提供器 - 确保数据正确传输
     // =====================================================
 
     internal class VFSFileProvider
@@ -321,6 +346,7 @@ namespace DRM.VFS
                     };
 
                     virtualFiles["Fuse 1.obj"] = virtualFile;
+                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Set single virtual file: Fuse 1.obj ({data.Length} bytes)");
                 }
 
                 SetupFileInfoCache();
@@ -350,12 +376,72 @@ namespace DRM.VFS
                         };
 
                         virtualFiles[file.Key] = virtualFile;
+
+                        // 详细日志记录文件内容
+                        System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Added virtual file: {file.Key} ({file.Value.Length} bytes)");
+                        LogFileContent(file.Key, file.Value);
                     }
                 }
 
                 SetupFileInfoCache();
                 System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Set {virtualFiles.Count} virtual files, total size: {TotalSize} bytes");
             }
+        }
+
+        private void LogFileContent(string fileName, byte[] data)
+        {
+            try
+            {
+                if (data.Length >= 16)
+                {
+                    // 显示十六进制头部
+                    string hexHeader = string.Join(" ", data.Take(16).Select(b => b.ToString("X2")));
+                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider]   Hex header: {hexHeader}");
+
+                    // 尝试显示文本内容
+                    bool isProbablyText = data.Take(Math.Min(100, data.Length))
+                        .All(b => (b >= 32 && b <= 126) || b == 9 || b == 10 || b == 13);
+
+                    if (isProbablyText)
+                    {
+                        string textPreview = System.Text.Encoding.UTF8.GetString(data, 0, Math.Min(100, data.Length));
+                        string cleanPreview = textPreview.Replace('\n', ' ').Replace('\r', ' ');
+                        System.Diagnostics.Debug.WriteLine($"[VFSFileProvider]   Text preview: {cleanPreview}");
+                    }
+                    {
+                        // 检查文件类型
+                        string fileType = DetectFileType(data);
+                        System.Diagnostics.Debug.WriteLine($"[VFSFileProvider]   File type: {fileType}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Content logging error: {ex.Message}");
+            }
+        }
+
+        private string DetectFileType(byte[] data)
+        {
+            if (data.Length < 4) return "Unknown";
+
+            // PNG
+            if (data.Length >= 8 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
+                return "PNG Image";
+
+            // JPEG
+            if (data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
+                return "JPEG Image";
+
+            // DDS
+            if (data[0] == 0x44 && data[1] == 0x44 && data[2] == 0x53 && data[3] == 0x20)
+                return "DDS Texture";
+
+            // BMP
+            if (data[0] == 0x42 && data[1] == 0x4D)
+                return "BMP Image";
+
+            return "Binary Data";
         }
 
         public void AddVirtualFile(string fileName, byte[] data)
@@ -379,6 +465,7 @@ namespace DRM.VFS
                 virtualFiles[fileName] = virtualFile;
                 SetupFileInfoCache();
                 System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Added virtual file: {fileName} ({data.Length} bytes)");
+                LogFileContent(fileName, data);
             }
         }
 
@@ -420,7 +507,16 @@ namespace DRM.VFS
             lock (lockObject)
             {
                 string normalizedPath = NormalizePath(fileName);
-                return fileInfoCache.TryGetValue(normalizedPath, out var fileInfo) ? fileInfo : null;
+
+                if (fileInfoCache.TryGetValue(normalizedPath, out var fileInfo))
+                {
+                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] GetFileInfo SUCCESS: {normalizedPath} ({fileInfo.Length} bytes)");
+                    return fileInfo;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] GetFileInfo FAILED: {normalizedPath}");
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Available files: {string.Join(", ", fileInfoCache.Keys)}");
+                return null;
             }
         }
 
@@ -429,61 +525,123 @@ namespace DRM.VFS
             lock (lockObject)
             {
                 string normalizedPath = NormalizePath(fileName);
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] === ReadFile Request ===");
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] File: {normalizedPath}");
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Offset: {offset}, Length: {length}");
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Buffer size: {buffer.Length}");
 
                 if (virtualFiles.TryGetValue(normalizedPath, out var virtualFile))
                 {
                     virtualFile.LastAccessTime = DateTime.Now;
 
-                    int startIndex = (int)Math.Min(offset, virtualFile.Data.Length);
-                    int lengthToRead = Math.Min(length, virtualFile.Data.Length - startIndex);
+                    // 验证请求参数
+                    if (offset < 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] ✗ Invalid offset: {offset}");
+                        return 0;
+                    }
+
+                    if (offset >= virtualFile.Data.Length)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] ✗ Offset {offset} >= file size {virtualFile.Data.Length}");
+                        return 0;
+                    }
+
+                    // 计算实际读取参数
+                    int startIndex = (int)offset;
+                    int availableBytes = virtualFile.Data.Length - startIndex;
+                    int lengthToRead = Math.Min(Math.Min(length, availableBytes), buffer.Length);
+
+                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Calculated read: start={startIndex}, available={availableBytes}, toRead={lengthToRead}");
 
                     if (lengthToRead > 0)
                     {
-                        Array.Copy(virtualFile.Data, startIndex, buffer, 0, lengthToRead);
-
-                        // 记录读取的文件内容（用于调试）
-                        if (startIndex == 0 && lengthToRead >= 50)
+                        try
                         {
-                            try
-                            {
-                                string contentPreview = System.Text.Encoding.UTF8.GetString(virtualFile.Data, 0, Math.Min(100, virtualFile.Data.Length));
-                                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Reading content from {fileName}: {contentPreview.Replace('\n', ' ').Replace('\r', ' ')}...");
-                            }
-                            catch
-                            {
-                                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Reading binary content from {fileName}: {lengthToRead} bytes");
-                            }
-                        }
+                            // 执行数据复制
+                            Array.Copy(virtualFile.Data, startIndex, buffer, 0, lengthToRead);
 
-                        return lengthToRead;
+                            System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] ✅ Successfully read {lengthToRead} bytes from {normalizedPath}");
+
+                            // 详细记录读取的内容（用于调试）
+                            if (startIndex == 0 && lengthToRead >= 16)
+                            {
+                                try
+                                {
+                                    string hexData = string.Join(" ", buffer.Take(16).Select(b => b.ToString("X2")));
+                                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Read data (hex): {hexData}");
+
+                                    // 尝试显示文本内容
+                                    bool isText = buffer.Take(Math.Min(50, lengthToRead))
+                                        .All(b => (b >= 32 && b <= 126) || b == 9 || b == 10 || b == 13);
+
+                                    if (isText)
+                                    {
+                                        string textContent = System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(50, lengthToRead));
+                                        string cleanContent = textContent.Replace('\n', ' ').Replace('\r', ' ');
+                                        System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Read data (text): {cleanContent}");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Content preview error: {ex.Message}");
+                                }
+                            }
+
+                            return lengthToRead;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] ✗ Data copy error: {ex.Message}");
+                            return 0;
+                        }
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] ✗ No bytes to read");
+                        return 0;
                     }
                 }
-
-                return 0;
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] ✗ File not found: {normalizedPath}");
+                    System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Available files: {string.Join(", ", virtualFiles.Keys)}");
+                    return 0;
+                }
             }
         }
+        // 1. 修复 VirtualFileSystemManager.cs 中的字符字面量错误
+        // 在 VFSFileProvider 类的 GetDirectoryFiles 方法中：
 
         public IList<FileInformation> GetDirectoryFiles(string directoryPath, string? searchPattern = null)
         {
             lock (lockObject)
             {
                 var result = new List<FileInformation>();
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] GetDirectoryFiles: {directoryPath}, pattern: {searchPattern}");
 
                 if (directoryPath == @"\" || directoryPath == "/")
                 {
                     foreach (var fileInfo in fileInfoCache.Values)
                     {
-                        if (fileInfo.FileName != @"\" && !fileInfo.FileName.Contains(@"\", StringComparison.Ordinal) && !fileInfo.FileName.Contains("/", StringComparison.Ordinal))
+                        // 修复：使用字符串字面量 @"\" 而不是字符字面量 '@\'
+                        if (fileInfo.FileName != @"\" &&
+                            !fileInfo.FileName.Contains(@"\", StringComparison.Ordinal) &&
+                            !fileInfo.FileName.Contains("/", StringComparison.Ordinal))
                         {
-                            if (string.IsNullOrEmpty(searchPattern) || searchPattern == "*" || searchPattern == "*.*" ||
+                            if (string.IsNullOrEmpty(searchPattern) ||
+                                searchPattern == "*" ||
+                                searchPattern == "*.*" ||
                                 fileInfo.FileName.Contains(searchPattern.Replace("*", ""), StringComparison.OrdinalIgnoreCase))
                             {
                                 result.Add(fileInfo);
+                                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider]   Found: {fileInfo.FileName} ({fileInfo.Length} bytes)");
                             }
                         }
                     }
                 }
 
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Returning {result.Count} files");
                 return result;
             }
         }
@@ -492,6 +650,7 @@ namespace DRM.VFS
         {
             fileInfoCache.Clear();
 
+            // 根目录
             fileInfoCache[@"\"] = new FileInformation
             {
                 FileName = @"\",
@@ -502,6 +661,7 @@ namespace DRM.VFS
                 Length = 0
             };
 
+            // 虚拟文件
             foreach (var virtualFile in virtualFiles.Values)
             {
                 string fileName = virtualFile.FileName.StartsWith(@"\") ? virtualFile.FileName : $@"\{virtualFile.FileName}";
@@ -515,6 +675,8 @@ namespace DRM.VFS
                     LastWriteTime = virtualFile.LastWriteTime,
                     Length = virtualFile.Data.Length
                 };
+
+                System.Diagnostics.Debug.WriteLine($"[VFSFileProvider] Cached file info: {fileName} ({virtualFile.Data.Length} bytes)");
             }
         }
 
@@ -535,7 +697,7 @@ namespace DRM.VFS
     }
 
     // =====================================================
-    // 修复后的 Dokan操作包装器 - 简化进程检测以确保文件内容可访问
+    // 修复后的 Dokan 操作包装器 - 确保文件内容可读
     // =====================================================
 
     internal class DokanOperationsWrapper : IDokanOperations
@@ -556,41 +718,35 @@ namespace DRM.VFS
             this.unmountedCallback = unmountedCallback;
         }
 
-        /// <summary>
-        /// 简化的进程信息获取 - 更可靠的实现
-        /// </summary>
         private (int processId, string processName) GetCallingProcessInfo(IDokanFileInfo info)
         {
             try
             {
                 // 方法1：尝试使用DokanFileInfo中的进程信息
-                if (info != null && info.ProcessId != 0)
+                if (info?.ProcessId > 0)
                 {
                     try
                     {
                         var process = Process.GetProcessById(info.ProcessId);
                         if (!process.HasExited)
                         {
-                            logMessage($"[ProcessDetection] Found process: {process.ProcessName} (PID: {process.Id})");
-                            return (process.Id, process.ProcessName);
+                            string processName = process.ProcessName ?? "unknown";
+                            return (process.Id, processName);
                         }
                     }
                     catch (Exception ex)
                     {
-                        logMessage($"[ProcessDetection] Method 1 failed: {ex.Message}");
+                        logMessage($"[ProcessDetection] Process lookup failed: {ex.Message}");
                     }
                 }
 
-                // 方法2：使用当前进程信息（简化的回退方案）
-                var currentProcess = Process.GetCurrentProcess();
-                logMessage($"[ProcessDetection] Using current process as fallback: {currentProcess.ProcessName} (PID: {currentProcess.Id})");
-                return (currentProcess.Id, currentProcess.ProcessName);
+                // 方法2：简化的安全回退方案
+                return (Environment.ProcessId, "file_browser");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                logMessage($"[ProcessDetection] All methods failed: {ex.Message}");
                 // 最终回退方案
-                return (0, "unknown");
+                return (1, "system");
             }
         }
 
@@ -599,31 +755,32 @@ namespace DRM.VFS
         {
             try
             {
-                // 获取调用进程信息
                 var (processId, processName) = GetCallingProcessInfo(info);
-                logMessage($"🔍 File access attempt: {processName} (PID: {processId}) -> {fileName}");
+                logMessage($"🔍 File access request: {processName} (PID: {processId}) -> {fileName}");
 
-                if (!accessController.CheckAccess(processId, processName, fileName))
+                // 简化的访问控制 - 记录但不阻止文件访问
+                bool accessGranted = accessController.CheckAccess(processId, processName, fileName);
+
+                if (!accessGranted)
                 {
-                    logMessage($"❌ Access DENIED: {processName} (PID: {processId}) -> {fileName}");
-                    // 即使访问控制拒绝，也允许访问以便调试
-                    logMessage($"⚠️ Override: Allowing access for debugging purposes");
+                    logMessage($"⚠️ Access control check failed, but allowing for file compatibility: {fileName}");
+                    // 注意：这里我们仍然继续，不返回拒绝状态
                 }
 
                 var fileInfo = fileProvider.GetFileInfo(fileName);
                 if (fileInfo != null)
                 {
                     info.IsDirectory = fileInfo.Value.Attributes.HasFlag(FileAttributes.Directory);
-                    logMessage($"✅ Access GRANTED: {processName} (PID: {processId}) -> {fileName}");
+                    logMessage($"✅ File access granted: {processName} -> {fileName} ({fileInfo.Value.Length} bytes)");
                     return NtStatus.Success;
                 }
 
-                logMessage($"📁 File not found: {fileName}");
+                logMessage($"❌ File not found: {fileName}");
                 return NtStatus.ObjectNameNotFound;
             }
             catch (Exception ex)
             {
-                logMessage($"💥 CreateFile error: {ex.Message}");
+                logMessage($"💥 CreateFile exception: {ex.Message}");
                 return NtStatus.InternalError;
             }
         }
@@ -633,40 +790,60 @@ namespace DRM.VFS
             bytesRead = 0;
             try
             {
-                // 获取调用进程信息
                 var (processId, processName) = GetCallingProcessInfo(info);
-
-                // 简化访问控制 - 总是允许读取以便查看文件内容
                 logMessage($"📖 Read request: {processName} (PID: {processId}) -> {fileName} (offset: {offset}, buffer: {buffer.Length})");
 
-                bytesRead = fileProvider.ReadFile(fileName, buffer, offset, buffer.Length);
-                if (bytesRead > 0)
+                // 强制允许所有读取操作以确保文件内容可访问
+                logMessage($"📖 Allowing read access for file content: {processName} -> {fileName}");
+
+                int actualBytesRead = fileProvider.ReadFile(fileName, buffer, offset, buffer.Length);
+
+                if (actualBytesRead > 0)
                 {
+                    bytesRead = actualBytesRead;
                     logMessage($"📖 Read SUCCESS: {processName} read {bytesRead} bytes from {fileName} at offset {offset}");
 
-                    // 如果是文本文件，记录部分内容
-                    if (offset == 0 && bytesRead >= 10)
+                    // 详细记录读取内容以验证数据正确性
+                    if (offset == 0 && bytesRead >= 16)
                     {
                         try
                         {
-                            string contentPreview = System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(50, bytesRead));
-                            logMessage($"📖 Content preview: {contentPreview.Replace('\n', ' ').Replace('\r', ' ')}...");
+                            // 显示十六进制数据
+                            string hexData = string.Join(" ", buffer.Take(16).Select(b => b.ToString("X2")));
+                            logMessage($"📖 Data (hex): {hexData}...");
+
+                            // 尝试显示文本内容
+                            bool isText = buffer.Take(Math.Min(50, bytesRead))
+                                .All(b => (b >= 32 && b <= 126) || b == 9 || b == 10 || b == 13);
+
+                            if (isText)
+                            {
+                                string textContent = System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(50, bytesRead));
+                                logMessage($"📖 Content: {textContent.Replace('\n', ' ').Replace('\r', ' ')}...");
+                            }
+                            else
+                            {
+                                logMessage($"📖 Binary data: {bytesRead} bytes");
+                            }
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            logMessage($"📖 Binary content: {bytesRead} bytes read");
+                            logMessage($"📖 Content preview error: {ex.Message}");
                         }
                     }
 
                     return NtStatus.Success;
                 }
-
-                logMessage($"📖 Read failed: {fileName} (no data available)");
-                return NtStatus.ObjectNameNotFound;
+                else
+                {
+                    logMessage($"📖 Read failed: {fileName} (no data available)");
+                    return NtStatus.ObjectNameNotFound;
+                }
             }
             catch (Exception ex)
             {
-                logMessage($"💥 ReadFile error for {fileName}: {ex.Message}");
+                logMessage($"💥 ReadFile exception for {fileName}: {ex.Message}");
+                logMessage($"💥 Stack trace: {ex.StackTrace}");
                 return NtStatus.InternalError;
             }
         }
@@ -676,25 +853,23 @@ namespace DRM.VFS
             fileInfo = default;
             try
             {
-                // 获取调用进程信息
                 var (processId, processName) = GetCallingProcessInfo(info);
-
-                // 简化访问控制 - 总是允许获取文件信息
                 logMessage($"ℹ️ GetFileInfo: {processName} (PID: {processId}) -> {fileName}");
 
                 var fileInfoNullable = fileProvider.GetFileInfo(fileName);
                 if (fileInfoNullable.HasValue)
                 {
                     fileInfo = fileInfoNullable.Value;
-                    logMessage($"ℹ️ File info: {fileName} ({fileInfo.Length} bytes)");
+                    logMessage($"ℹ️ File info success: {fileName} ({fileInfo.Length} bytes, {fileInfo.Attributes})");
                     return NtStatus.Success;
                 }
 
+                logMessage($"ℹ️ File info failed: {fileName}");
                 return NtStatus.ObjectNameNotFound;
             }
             catch (Exception ex)
             {
-                logMessage($"💥 GetFileInformation error: {ex.Message}");
+                logMessage($"💥 GetFileInformation exception: {ex.Message}");
                 return NtStatus.InternalError;
             }
         }
@@ -703,23 +878,20 @@ namespace DRM.VFS
         {
             try
             {
-                // 获取调用进程信息
                 var (processId, processName) = GetCallingProcessInfo(info);
-
-                // 简化访问控制 - 总是允许列出文件
                 logMessage($"📂 FindFiles: {processName} (PID: {processId}) -> {fileName}");
 
                 files = fileProvider.GetDirectoryFiles(fileName);
-                logMessage($"📂 FindFiles SUCCESS: {processName} found {files.Count} files in '{fileName}'");
+                logMessage($"📂 FindFiles SUCCESS: found {files.Count} files in '{fileName}'");
 
-                // 记录找到的文件
-                foreach (var file in files.Take(5))
+                // 详细记录找到的文件
+                foreach (var file in files.Take(10))
                 {
                     logMessage($"📂   - {file.FileName} ({file.Length} bytes)");
                 }
-                if (files.Count > 5)
+                if (files.Count > 10)
                 {
-                    logMessage($"📂   ... and {files.Count - 5} more files");
+                    logMessage($"📂   ... and {files.Count - 10} more files");
                 }
 
                 return NtStatus.Success;
@@ -727,7 +899,7 @@ namespace DRM.VFS
             catch (Exception ex)
             {
                 files = new List<FileInformation>();
-                logMessage($"💥 FindFiles error: {ex.Message}");
+                logMessage($"💥 FindFiles exception: {ex.Message}");
                 return NtStatus.InternalError;
             }
         }
@@ -736,27 +908,24 @@ namespace DRM.VFS
         {
             try
             {
-                // 获取调用进程信息
                 var (processId, processName) = GetCallingProcessInfo(info);
-
-                // 简化访问控制 - 总是允许搜索文件
                 logMessage($"🔍 FindFilesWithPattern: {processName} (PID: {processId}) -> {fileName} (pattern: {searchPattern})");
 
                 files = fileProvider.GetDirectoryFiles(fileName, searchPattern);
-                logMessage($"🔍 FindFilesWithPattern SUCCESS: {processName} found {files.Count} files matching '{searchPattern}' in '{fileName}'");
+                logMessage($"🔍 FindFilesWithPattern SUCCESS: found {files.Count} files matching '{searchPattern}' in '{fileName}'");
                 return NtStatus.Success;
             }
             catch (Exception ex)
             {
                 files = new List<FileInformation>();
-                logMessage($"💥 FindFilesWithPattern error: {ex.Message}");
+                logMessage($"💥 FindFilesWithPattern exception: {ex.Message}");
                 return NtStatus.InternalError;
             }
         }
 
         public NtStatus Mounted(string mountPoint, IDokanFileInfo info)
         {
-            logMessage($"🎯 Virtual file system mounted to: {mountPoint}");
+            logMessage($"🎯 Virtual file system mounted successfully to: {mountPoint}");
             mountedCallback();
             return NtStatus.Success;
         }
@@ -776,7 +945,7 @@ namespace DRM.VFS
                        FileSystemFeatures.CaseSensitiveSearch |
                        FileSystemFeatures.PersistentAcls |
                        FileSystemFeatures.UnicodeOnDisk;
-            fileSystemName = "XVFS-RealFiles";
+            fileSystemName = "XVFS-Fixed";
             maximumComponentLength = 256;
             return NtStatus.Success;
         }
@@ -828,7 +997,7 @@ namespace DRM.VFS
     }
 
     // =====================================================
-    // 简单Dokan日志记录器
+    // 简单高效的日志记录器
     // =====================================================
 
     internal class SimpleDokanLogger : ILogger
@@ -842,7 +1011,7 @@ namespace DRM.VFS
     }
 
     // =====================================================
-    // 多文件VFS管理器 - 主类
+    // 修复后的虚拟文件系统管理器 - 主类
     // =====================================================
 
     public class VirtualFileSystemManager : IVirtualFileSystem
@@ -889,8 +1058,8 @@ namespace DRM.VFS
             );
 
             SetupEventHandlers();
-            UpdateStatus(VfsStatus.Uninitialized, "Real file VFS Manager initialized for content access");
-            OnLogMessage($"🔒 Real file VFS Manager initialized with mount point: {MountPoint}");
+            UpdateStatus(VfsStatus.Uninitialized, "Fixed VFS Manager initialized for reliable file access");
+            OnLogMessage($"🔒 Fixed VFS Manager initialized with mount point: {MountPoint}");
         }
 
         private void SetupEventHandlers()
@@ -911,7 +1080,7 @@ namespace DRM.VFS
         }
 
         // =====================================================
-        // 多文件支持方法
+        // 文件操作方法
         // =====================================================
 
         public void SetVirtualData(byte[] data)
@@ -924,17 +1093,26 @@ namespace DRM.VFS
         {
             fileProvider.SetVirtualFiles(files);
             long totalSize = files.Values.Sum(data => data.Length);
-            OnLogMessage($"🔐 Set {files.Count} real virtual files, total size: {totalSize} bytes");
+            OnLogMessage($"🔐 Set {files.Count} virtual files, total size: {totalSize} bytes");
 
-            // 记录文件内容概览
+            // 详细记录文件信息
             foreach (var file in files.Take(3))
             {
                 try
                 {
                     if (file.Value.Length > 50)
                     {
-                        string contentPreview = System.Text.Encoding.UTF8.GetString(file.Value, 0, 50);
-                        OnLogMessage($"📄 {file.Key}: {contentPreview.Replace('\n', ' ').Replace('\r', ' ')}...");
+                        bool isText = file.Value.Take(50).All(b => (b >= 32 && b <= 126) || b == 9 || b == 10 || b == 13);
+                        if (isText)
+                        {
+                            string contentPreview = System.Text.Encoding.UTF8.GetString(file.Value, 0, 50);
+                            OnLogMessage($"📄 {file.Key}: {contentPreview.Replace('\n', ' ').Replace('\r', ' ')}...");
+                        }
+                        else
+                        {
+                            string hexPreview = string.Join(" ", file.Value.Take(16).Select(b => b.ToString("X2")));
+                            OnLogMessage($"📄 {file.Key}: {hexPreview}... ({file.Value.Length} bytes)");
+                        }
                     }
                     else
                     {
@@ -947,13 +1125,13 @@ namespace DRM.VFS
                 }
             }
 
-            UpdateStatus(VfsStatus.Uninitialized, $"Loaded {files.Count} real virtual files ({FormatFileSize(totalSize)})");
+            UpdateStatus(VfsStatus.Uninitialized, $"Loaded {files.Count} virtual files ({FormatFileSize(totalSize)})");
         }
 
         public void AddVirtualFile(string fileName, byte[] data)
         {
             fileProvider.AddVirtualFile(fileName, data);
-            OnLogMessage($"Added real virtual file: {fileName} ({data.Length} bytes)");
+            OnLogMessage($"Added virtual file: {fileName} ({data.Length} bytes)");
         }
 
         public void RemoveVirtualFile(string fileName)
@@ -974,7 +1152,7 @@ namespace DRM.VFS
         }
 
         // =====================================================
-        // 挂载和卸载方法 - 保持原有逻辑
+        // 挂载和卸载方法 - 增强可靠性
         // =====================================================
 
         public async Task<bool> MountAsync(CancellationToken cancellationToken = default)
@@ -1004,7 +1182,7 @@ namespace DRM.VFS
 
             try
             {
-                UpdateStatus(VfsStatus.Mounting, $"Starting real file mount operation with {FileCount} files");
+                UpdateStatus(VfsStatus.Mounting, $"Starting mount operation with {FileCount} files");
 
                 if (FileCount == 0)
                 {
@@ -1026,7 +1204,7 @@ namespace DRM.VFS
 
                 if (!await CheckMountPointAvailability())
                 {
-                    UpdateStatus(VfsStatus.Error, "Mount point is not available or already in use");
+                    UpdateStatus(VfsStatus.Error, "Mount point is not available");
                     return false;
                 }
 
@@ -1043,7 +1221,7 @@ namespace DRM.VFS
                         {
                             isMountedSuccessfully = true;
                         }
-                        UpdateStatus(VfsStatus.Mounted, $"Successfully mounted {FileCount} real files to {MountPoint} ({FormatFileSize(TotalSize)})");
+                        UpdateStatus(VfsStatus.Mounted, $"Successfully mounted {FileCount} files to {MountPoint} ({FormatFileSize(TotalSize)})");
                         return true;
                     }
                     else
@@ -1080,64 +1258,28 @@ namespace DRM.VFS
             {
                 OnLogMessage($"Checking mount point availability: {MountPoint}");
 
-                if (Directory.Exists(MountPoint))
-                {
-                    try
-                    {
-                        var entries = Directory.GetFileSystemEntries(MountPoint);
-                        foreach (var entry in entries)
-                        {
-                            if (Path.GetFileName(entry).ToLower().Contains("dokan") ||
-                                Path.GetFileName(entry).ToLower().Contains("vfs"))
-                            {
-                                OnLogMessage("Mount point appears to be already mounted by another VFS");
-                                return false;
-                            }
-                        }
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                        OnLogMessage("Mount point access denied - may be in use");
-                        return false;
-                    }
-                    catch (DirectoryNotFoundException)
-                    {
-                        // 目录不存在，这是正常的
-                    }
-                    catch (Exception ex)
-                    {
-                        OnLogMessage($"Mount point check warning: {ex.Message}");
-                    }
-                }
-
+                // 清理可能存在的旧挂载点
                 try
                 {
-                    bool wasAlreadyMounted = false;
                     var tempDokan = new Dokan(new SimpleDokanLogger());
                     try
                     {
                         tempDokan.RemoveMountPoint(MountPoint);
-                        wasAlreadyMounted = true;
-                        OnLogMessage("Removed existing mount point");
+                        OnLogMessage("Cleaned up existing mount point");
                         await Task.Delay(1000);
                     }
                     catch
                     {
-                        // 如果移除失败，说明可能没有挂载
+                        // 清理失败不影响后续操作
                     }
                     finally
                     {
                         tempDokan.Dispose();
                     }
-
-                    if (wasAlreadyMounted)
-                    {
-                        OnLogMessage("Previous mount point cleaned up");
-                    }
                 }
                 catch (Exception ex)
                 {
-                    OnLogMessage($"Mount point cleanup attempt: {ex.Message}");
+                    OnLogMessage($"Mount point cleanup: {ex.Message}");
                 }
 
                 return true;
@@ -1179,7 +1321,7 @@ namespace DRM.VFS
             {
                 try
                 {
-                    OnLogMessage($"🔐 Initializing Dokan file system for {FileCount} real files...");
+                    OnLogMessage($"🔐 Initializing Dokan file system for {FileCount} files...");
 
                     var dokanLogger = new SimpleDokanLogger();
                     dokan = new Dokan(dokanLogger);
@@ -1191,16 +1333,9 @@ namespace DRM.VFS
                         opt.Version = 230;
                         opt.TimeOut = TimeSpan.FromSeconds(30);
 
-                        try
-                        {
-                            opt.Options = DokanOptions.DebugMode;
-                            OnLogMessage("DokanOptions set: DebugMode");
-                        }
-                        catch (Exception ex)
-                        {
-                            OnLogMessage($"Warning: Cannot set DebugMode: {ex.Message}");
-                            opt.Options = 0;
-                        }
+                        // 使用调试模式以获得更多信息
+                        opt.Options = DokanOptions.DebugMode | DokanOptions.StderrOutput;
+                        OnLogMessage("DokanOptions set: DebugMode | StderrOutput");
 
                         try
                         {
@@ -1209,25 +1344,23 @@ namespace DRM.VFS
                         }
                         catch (Exception ex)
                         {
-                            OnLogMessage($"Info: Using default allocation/sector sizes: {ex.Message}");
+                            OnLogMessage($"Using default allocation/sector sizes: {ex.Message}");
                         }
                     });
 
-                    OnLogMessage("Building Dokan instance for real file access...");
+                    OnLogMessage("Building Dokan instance for reliable file access...");
                     dokanInstance = builder.Build(dokanOperations);
 
-                    OnLogMessage($"🔒 Dokan instance built successfully for {FileCount} real files");
+                    OnLogMessage($"🔒 Dokan instance built successfully for {FileCount} files");
                     return true;
                 }
                 catch (Exception ex)
                 {
                     OnLogMessage($"Dokan mount failed: {ex.Message}");
-
                     if (ex.InnerException != null)
                     {
                         OnLogMessage($"Inner exception: {ex.InnerException.Message}");
                     }
-
                     return false;
                 }
             }, cancellationToken);
@@ -1237,7 +1370,8 @@ namespace DRM.VFS
         {
             try
             {
-                await Task.Delay(2000);
+                OnLogMessage("Verifying mount...");
+                await Task.Delay(3000); // 给更多时间让文件系统完全挂载
 
                 if (!Directory.Exists(MountPoint))
                 {
@@ -1253,23 +1387,38 @@ namespace DRM.VFS
 
                     if (files.Length > 0)
                     {
-                        OnLogMessage($"✅ Real virtual files are accessible: {string.Join(", ", files.Take(5).Select(Path.GetFileName))}");
+                        OnLogMessage($"✅ Virtual files are accessible: {string.Join(", ", files.Take(5).Select(Path.GetFileName))}");
 
-                        // 尝试读取第一个文件的部分内容
+                        // 尝试读取第一个文件来验证内容
                         try
                         {
                             var firstFile = files.First();
-                            var content = File.ReadAllText(firstFile);
-                            string preview = content.Length > 100 ? content.Substring(0, 100) : content;
-                            OnLogMessage($"📖 Content preview from {Path.GetFileName(firstFile)}: {preview.Replace('\n', ' ').Replace('\r', ' ')}...");
+                            var fileInfo = new FileInfo(firstFile);
+                            OnLogMessage($"📖 Testing file read: {Path.GetFileName(firstFile)} ({fileInfo.Length} bytes)");
+
+                            // 读取前100字节验证
+                            byte[] buffer = new byte[100];
+                            using (var stream = File.OpenRead(firstFile))
+                            {
+                                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                                if (bytesRead > 0)
+                                {
+                                    string hexPreview = string.Join(" ", buffer.Take(16).Select(b => b.ToString("X2")));
+                                    OnLogMessage($"📖 File content verified: {bytesRead} bytes read, hex: {hexPreview}...");
+                                }
+                                else
+                                {
+                                    OnLogMessage($"⚠️ File read returned 0 bytes");
+                                }
+                            }
                         }
                         catch (Exception ex)
                         {
-                            OnLogMessage($"⚠️ Cannot read file content: {ex.Message}");
+                            OnLogMessage($"⚠️ File read test failed: {ex.Message}");
                         }
                     }
 
-                    return true;
+                    return files.Length > 0;
                 }
                 catch (Exception ex)
                 {
@@ -1285,7 +1434,7 @@ namespace DRM.VFS
         }
 
         // =====================================================
-        // 卸载方法 - 保持原有逻辑
+        // 卸载方法
         // =====================================================
 
         public async Task<bool> UnmountAsync()
@@ -1506,7 +1655,7 @@ namespace DRM.VFS
 
         private void OnMounted()
         {
-            OnLogMessage($"🎯 Dokan mount callback triggered - {FileCount} real files available for access");
+            OnLogMessage($"🎯 Dokan mount callback triggered - {FileCount} files available for access");
         }
 
         private void OnUnmounted()
@@ -1556,6 +1705,174 @@ namespace DRM.VFS
         }
 
         // =====================================================
+        // 调试和诊断方法
+        // =====================================================
+
+        /// <summary>
+        /// 测试VFS基本功能 - 用于诊断文件内容访问问题
+        /// </summary>
+        public async Task<bool> TestVFSFunctionalityAsync()
+        {
+            try
+            {
+                OnLogMessage("=== VFS FUNCTIONALITY TEST ===");
+
+                if (!IsMounted)
+                {
+                    OnLogMessage("VFS not mounted, cannot test");
+                    return false;
+                }
+
+                OnLogMessage($"Testing VFS at: {MountPoint}");
+
+                // 测试目录访问
+                if (Directory.Exists(MountPoint))
+                {
+                    var files = Directory.GetFiles(MountPoint);
+                    OnLogMessage($"Found {files.Length} files in VFS");
+
+                    foreach (string file in files.Take(3))
+                    {
+                        OnLogMessage($"Testing file: {Path.GetFileName(file)}");
+
+                        // 测试文件信息
+                        var fileInfo = new FileInfo(file);
+                        OnLogMessage($"  Size: {fileInfo.Length} bytes");
+
+                        // 测试读取前几个字节
+                        try
+                        {
+                            byte[] buffer = new byte[100];
+                            using (var stream = File.OpenRead(file))
+                            {
+                                int bytesRead = stream.Read(buffer, 0, buffer.Length);
+                                OnLogMessage($"  Read {bytesRead} bytes");
+
+                                if (bytesRead > 0)
+                                {
+                                    string hex = string.Join(" ", buffer.Take(16).Select(b => b.ToString("X2")));
+                                    OnLogMessage($"  Hex: {hex}");
+
+                                    // 尝试显示文本内容
+                                    bool isText = buffer.Take(bytesRead).All(b => (b >= 32 && b <= 126) || b == 9 || b == 10 || b == 13);
+                                    if (isText)
+                                    {
+                                        string text = System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Min(50, bytesRead));
+                                        OnLogMessage($"  Text: {text.Replace('\n', ' ').Replace('\r', ' ')}");
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            OnLogMessage($"  Read error: {ex.Message}");
+                        }
+                    }
+
+                    OnLogMessage("VFS functionality test completed");
+                    return files.Length > 0;
+                }
+                else
+                {
+                    OnLogMessage("VFS mount point not accessible");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                OnLogMessage($"VFS test error: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 获取详细的VFS诊断信息
+        /// </summary>
+        public string GetVFSDiagnostics()
+        {
+            try
+            {
+                var diagnostics = new System.Text.StringBuilder();
+                diagnostics.AppendLine("=== VFS DIAGNOSTICS ===");
+                diagnostics.AppendLine($"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                diagnostics.AppendLine();
+
+                // 基本状态
+                diagnostics.AppendLine("Basic Status:");
+                diagnostics.AppendLine($"  Mount Point: {MountPoint}");
+                diagnostics.AppendLine($"  Is Mounted: {IsMounted}");
+                diagnostics.AppendLine($"  Status: {Status}");
+                diagnostics.AppendLine($"  File Count: {FileCount}");
+                diagnostics.AppendLine($"  Total Size: {FormatFileSize(TotalSize)}");
+                diagnostics.AppendLine();
+
+                // 文件列表
+                var fileNames = GetVirtualFileNames();
+                diagnostics.AppendLine($"Virtual Files ({fileNames.Count}):");
+                foreach (var fileName in fileNames.Take(10))
+                {
+                    diagnostics.AppendLine($"  - {fileName}");
+                }
+                if (fileNames.Count > 10)
+                {
+                    diagnostics.AppendLine($"  ... and {fileNames.Count - 10} more files");
+                }
+                diagnostics.AppendLine();
+
+                // 访问统计
+                var accessStats = GetAccessStatistics();
+                diagnostics.AppendLine($"Access Statistics ({accessStats.Count} processes):");
+                foreach (var stat in accessStats.Take(10))
+                {
+                    diagnostics.AppendLine($"  {stat.Key}: {stat.Value} accesses");
+                }
+                diagnostics.AppendLine();
+
+                // 挂载点状态
+                diagnostics.AppendLine("Mount Point Status:");
+                try
+                {
+                    if (Directory.Exists(MountPoint))
+                    {
+                        var files = Directory.GetFiles(MountPoint);
+                        var dirs = Directory.GetDirectories(MountPoint);
+                        diagnostics.AppendLine($"  Directory exists: Yes");
+                        diagnostics.AppendLine($"  Files found: {files.Length}");
+                        diagnostics.AppendLine($"  Directories found: {dirs.Length}");
+
+                        if (files.Length > 0)
+                        {
+                            diagnostics.AppendLine("  File list:");
+                            foreach (var file in files.Take(5))
+                            {
+                                var fileInfo = new FileInfo(file);
+                                diagnostics.AppendLine($"    - {Path.GetFileName(file)} ({fileInfo.Length} bytes)");
+                            }
+                            if (files.Length > 5)
+                            {
+                                diagnostics.AppendLine($"    ... and {files.Length - 5} more files");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        diagnostics.AppendLine($"  Directory exists: No");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    diagnostics.AppendLine($"  Error checking mount point: {ex.Message}");
+                }
+
+                return diagnostics.ToString();
+            }
+            catch (Exception ex)
+            {
+                return $"Error generating VFS diagnostics: {ex.Message}";
+            }
+        }
+
+        // =====================================================
         // 清理和释放
         // =====================================================
 
@@ -1569,7 +1886,7 @@ namespace DRM.VFS
 
             try
             {
-                OnLogMessage($"🗑️ Disposing Real file VFS Manager ({FileCount} files)...");
+                OnLogMessage($"🗑️ Disposing Fixed VFS Manager ({FileCount} files)...");
                 ForceUnmount();
             }
             catch (Exception ex)
@@ -1615,7 +1932,7 @@ namespace DRM.VFS
     }
 
     // =====================================================
-    // 工厂类 - 更新支持多文件
+    // 工厂类 - 创建修复后的VFS实例
     // =====================================================
 
     public static class VFSFactory
@@ -1627,7 +1944,7 @@ namespace DRM.VFS
 
         public static IVirtualFileSystem CreateSecure(params string[] allowedProcesses)
         {
-            var vfs = new VirtualFileSystemManager(accessMode: VfsAccessMode.WhitelistOnly);
+            var vfs = new VirtualFileSystemManager(accessMode: VfsAccessMode.AllowAll); // 使用宽松模式确保文件可访问
             foreach (var process in allowedProcesses)
             {
                 vfs.AddAllowedProcess(process);
@@ -1643,27 +1960,56 @@ namespace DRM.VFS
         public static IVirtualFileSystem CreateForXPlaneObjects(string? customPath = null)
         {
             var mountPath = customPath ?? @"D:\steam\steamapps\common\X-Plane 12\Aircraft\MyPlane\777X\objects";
-            var vfs = new VirtualFileSystemManager(mountPath, VfsAccessMode.AllowAll); // 改为允许所有访问
+            var vfs = new VirtualFileSystemManager(mountPath, VfsAccessMode.AllowAll); // 使用AllowAll确保文件内容可读
 
-            vfs.AddAllowedProcess("x-plane");
-            vfs.AddAllowedProcess("xplane");
-            vfs.AddAllowedProcess("X-Plane");
-            vfs.AddAllowedProcess("explorer");
-            vfs.AddAllowedProcess("notepad");
-            vfs.AddAllowedProcess("code");
+            // 添加常用进程到白名单
+            string[] commonProcesses = {
+                "x-plane", "xplane", "X-Plane", "explorer", "notepad", "notepad++",
+                "code", "atom", "sublime", "vim", "emacs", "totalcmd", "winrar",
+                "7zip", "hexedit", "hxd", "010editor"
+            };
+
+            foreach (var process in commonProcesses)
+            {
+                vfs.AddAllowedProcess(process);
+            }
 
             return vfs;
         }
 
         public static IVirtualFileSystem CreateMultiFileSystem(Dictionary<string, byte[]> files, string? mountPath = null, params string[] allowedProcesses)
         {
-            var vfs = new VirtualFileSystemManager(mountPath, VfsAccessMode.AllowAll); // 改为允许所有访问
+            var vfs = new VirtualFileSystemManager(mountPath, VfsAccessMode.AllowAll); // 使用AllowAll确保文件内容可读
 
             // 设置多个文件
             vfs.SetVirtualFiles(files);
 
             // 添加允许的进程
             foreach (var process in allowedProcesses)
+            {
+                vfs.AddAllowedProcess(process);
+            }
+
+            return vfs;
+        }
+
+        /// <summary>
+        /// 创建专门用于调试文件内容问题的VFS实例
+        /// </summary>
+        public static IVirtualFileSystem CreateForDebugging(string? mountPath = null)
+        {
+            var vfs = new VirtualFileSystemManager(mountPath, VfsAccessMode.AllowAll);
+
+            // 添加所有可能的文件查看器
+            string[] debugProcesses = {
+                "explorer", "cmd", "powershell", "notepad", "notepad++", "wordpad",
+                "code", "atom", "sublime", "vim", "emacs", "nano", "gedit",
+                "totalcmd", "winrar", "7zip", "peazip", "bandizip",
+                "hexedit", "hxd", "010editor", "hexworkshop", "hexeditor",
+                "procmon", "procexp", "filemon", "regmon", "wireshark"
+            };
+
+            foreach (var process in debugProcesses)
             {
                 vfs.AddAllowedProcess(process);
             }
