@@ -1,206 +1,302 @@
 ﻿<Window x:Class="XPlaneActivator.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="X-Plane DRM Activator" Height="650" Width="800"
-        ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen"
-        Background="#FF2D2D30" Foreground="White">
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="X-Plane DRM Activator"
+        Height="700" Width="900"
+        MinHeight="600" MinWidth="800"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        Background="#FF2D2D30">
 
     <Window.Resources>
-        <Style x:Key="ModernButton" TargetType="Button">
+        <!-- Modern Dark Theme Styles -->
+        <Style x:Key="ModernTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Background" Value="#FF3F3F46"/>
+            <Setter Property="Foreground" Value="#FFDDDDDD"/>
+            <Setter Property="BorderBrush" Value="#FF007ACC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                        Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#FF00A2ED"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ModernButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="#FF007ACC"/>
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="15,8"/>
-            <Setter Property="Margin" Value="5"/>
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#FF1BA1E2"/>
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#FF005A9B"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#FF555555"/>
-                    <Setter Property="Foreground" Value="#FFAAAAAA"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FF1E8BD6"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#FF005A9E"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#FF6D6D6D"/>
+                                <Setter Property="Foreground" Value="#FF999999"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <Style x:Key="DeactivateButton" TargetType="Button">
-            <Setter Property="Background" Value="#FFFF6B6B"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="15,8"/>
-            <Setter Property="Margin" Value="5"/>
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
+            <Setter Property="Background" Value="#FF474747"/>
+        </Style>
+
+        <Style x:Key="DangerButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
+            <Setter Property="Background" Value="#FFD83B01"/>
+        </Style>
+
+        <Style x:Key="ModernLabelStyle" TargetType="Label">
+            <Setter Property="Foreground" Value="#FFDDDDDD"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+
+        <Style x:Key="HeaderLabelStyle" TargetType="Label" BasedOn="{StaticResource ModernLabelStyle}">
+            <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="FontSize" Value="14"/>
+        </Style>
+
+        <Style x:Key="StatusLabelStyle" TargetType="Label" BasedOn="{StaticResource ModernLabelStyle}">
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#FFFF5252"/>
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="#FFE53935"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Background" Value="#FF555555"/>
-                    <Setter Property="Foreground" Value="#FFAAAAAA"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="ModernTextBox" TargetType="TextBox">
-            <Setter Property="Background" Value="#FF3F3F46"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderBrush" Value="#FF007ACC"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="10,8"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Margin" Value="5"/>
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid Margin="16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Title Bar -->
-        <Border Grid.Row="0" Background="#FF1E1E1E" Padding="20,15">
-            <StackPanel>
-                <TextBlock Text="X-Plane DRM Activator" FontSize="24" FontWeight="Bold" 
-                          Foreground="#FF007ACC" HorizontalAlignment="Center"/>
-                <TextBlock Text="Secure Activation System v2.0" FontSize="12" 
-                          Foreground="#FFCCCCCC" HorizontalAlignment="Center" Margin="0,5,0,0"/>
-            </StackPanel>
-        </Border>
-
-        <!-- Main Content Area -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20">
-            <StackPanel MaxWidth="600">
-
-                <!-- Activation Area -->
-                <GroupBox Header="Activation Code Verification" Foreground="White" Margin="0,0,0,20">
-                    <GroupBox.HeaderTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" FontSize="16" FontWeight="Bold" Foreground="#FF007ACC"/>
-                        </DataTemplate>
-                    </GroupBox.HeaderTemplate>
-
-                    <StackPanel Margin="10">
-                        <TextBlock Text="Please enter your activation code:" Margin="0,0,0,5"/>
-                        <TextBox x:Name="txtActivationCode" Style="{StaticResource ModernTextBox}"
-                                 Text="" MaxLength="50" 
-                                 ToolTip="Format: XXXX-XXXX-XXXX-XXXX"/>
-
-                        <StackPanel Margin="0,15,0,0">
-                            <!-- First row buttons -->
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                                <Button x:Name="btnActivate" Content="Online Activation" 
-                                        Style="{StaticResource ModernButton}"
-                                        Click="BtnActivate_Click" Width="140"/>
-                                <Button x:Name="btnDeactivate" Content="Deactivate" 
-                                        Style="{StaticResource DeactivateButton}"
-                                        Click="BtnDeactivate_Click" Width="120"
-                                        Visibility="Collapsed" IsEnabled="False"/>
-                            </StackPanel>
-
-                            <!-- Second row buttons -->
-                            <StackPanel Orientation="Horizontal">
-                                <Button x:Name="btnDiagnostic" Content="System Diagnostic" 
-                                        Style="{StaticResource ModernButton}"
-                                        Click="BtnDiagnostic_Click" Width="140"/>
-                                <Button x:Name="btnActivationInfo" Content="Activation Info" 
-                                        Style="{StaticResource ModernButton}"
-                                        Click="BtnActivationInfo_Click" Width="120"
-                                        Visibility="Collapsed" IsEnabled="False"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </StackPanel>
-                </GroupBox>
-
-                <!-- System Information Area -->
-                <GroupBox Header="System Information" Foreground="White" Margin="0,0,0,20">
-                    <GroupBox.HeaderTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" FontSize="16" FontWeight="Bold" Foreground="#FF007ACC"/>
-                        </DataTemplate>
-                    </GroupBox.HeaderTemplate>
-
-                    <StackPanel Margin="10">
-                        <TextBlock Text="Machine Code:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                        <TextBox x:Name="txtMachineCode" Style="{StaticResource ModernTextBox}"
-                                 IsReadOnly="True" Text="Generating..."/>
-
-                        <TextBlock Text="Network Status:" FontWeight="SemiBold" Margin="0,15,0,5"/>
-                        <TextBlock x:Name="lblNetworkStatus" Text="Checking..." Foreground="#FFCCCCCC"/>
-
-                        <TextBlock Text="Virtual File System:" FontWeight="SemiBold" Margin="0,15,0,5"/>
-                        <TextBlock x:Name="lblVfsStatus" Text="Not Mounted" Foreground="#FFCCCCCC"/>
-
-                        <!-- Fixed: Missing activation status information controls -->
-                        <TextBlock x:Name="lblActivationStatusTitle" Text="Activation Status:" FontWeight="SemiBold" 
-                                  Margin="0,15,0,5" Visibility="Collapsed"/>
-                        <StackPanel x:Name="spActivationInfo" Orientation="Vertical" Visibility="Collapsed">
-                            <TextBlock x:Name="lblActivationTime" Text="" Foreground="#FFCCCCCC" Margin="0,2"/>
-                            <TextBlock x:Name="lblRemainingDays" Text="" Foreground="#FFCCCCCC" Margin="0,2"/>
-                            <TextBlock x:Name="lblLastHeartbeat" Text="" Foreground="#FFCCCCCC" Margin="0,2"/>
-                        </StackPanel>
-                    </StackPanel>
-                </GroupBox>
-
-                <!-- Activation Log Area -->
-                <GroupBox Header="Activation Log" Foreground="White">
-                    <GroupBox.HeaderTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" FontSize="16" FontWeight="Bold" Foreground="#FF007ACC"/>
-                        </DataTemplate>
-                    </GroupBox.HeaderTemplate>
-
-                    <StackPanel Margin="10">
-                        <TextBox x:Name="txtActivationLog" Style="{StaticResource ModernTextBox}"
-                                 Height="200" TextWrapping="Wrap" AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto" IsReadOnly="True"
-                                 Text="System started, waiting for activation...&#x0A;"/>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button x:Name="btnClearLog" Content="Clear Log" 
-                                    Style="{StaticResource ModernButton}"
-                                    Click="BtnClearLog_Click" Width="100"/>
-                            <Button x:Name="btnSaveLog" Content="Save Log" 
-                                    Style="{StaticResource ModernButton}"
-                                    Click="BtnSaveLog_Click" Width="100"/>
-                        </StackPanel>
-                    </StackPanel>
-                </GroupBox>
-
-            </StackPanel>
-        </ScrollViewer>
-
-        <!-- Status Bar -->
-        <Border Grid.Row="2" Background="#FF1E1E1E" Padding="20,10">
+        <!-- Header Section -->
+        <Border Grid.Row="0" Background="#FF3F3F46" CornerRadius="6" Padding="16" Margin="0,0,0,16">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="lblStatus" Grid.Column="0" 
-                          Text="Ready" Foreground="#FFCCCCCC" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="0">
+                    <Label Content="X-Plane DRM Activator" Style="{StaticResource HeaderLabelStyle}" FontSize="18"/>
+                    <Label x:Name="lblStatus" Content="Ready - Please enter activation code" Style="{StaticResource StatusLabelStyle}" Foreground="#FF00A2ED"/>
+                </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Ellipse x:Name="statusIndicator" Width="12" Height="12" 
-                            Fill="#FFFF6B6B" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="lblConnectionStatus" Text="Offline" 
-                              Foreground="#FFCCCCCC" VerticalAlignment="Center"/>
+                    <Ellipse x:Name="statusIndicator" Width="12" Height="12" Fill="#FFD83B01" Margin="0,0,8,0"/>
+                    <Label x:Name="lblConnectionStatus" Content="Offline" Style="{StaticResource ModernLabelStyle}" FontSize="10"/>
                 </StackPanel>
             </Grid>
         </Border>
 
+        <!-- Machine Code Section -->
+        <Border Grid.Row="1" Background="#FF3F3F46" CornerRadius="6" Padding="16" Margin="0,0,0,16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Label Grid.Row="0" Content="Machine Code" Style="{StaticResource HeaderLabelStyle}"/>
+                <TextBox x:Name="txtMachineCode" Grid.Row="1" 
+                         Style="{StaticResource ModernTextBoxStyle}"
+                         IsReadOnly="True" 
+                         FontFamily="Consolas"
+                         Text="Generating..."/>
+            </Grid>
+        </Border>
+
+        <!-- Activation Section -->
+        <Border Grid.Row="2" Background="#FF3F3F46" CornerRadius="6" Padding="16" Margin="0,0,0,16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Activation Code Input -->
+                <Label Grid.Row="0" Grid.ColumnSpan="4" Content="Activation Code" Style="{StaticResource HeaderLabelStyle}"/>
+                <TextBox x:Name="txtActivationCode" Grid.Row="1" Grid.Column="0" 
+                         Style="{StaticResource ModernTextBoxStyle}"
+                         Margin="0,0,8,0"
+                         ToolTip="Enter your activation code"/>
+
+                <!-- Action Buttons -->
+                <Button x:Name="btnActivate" Grid.Row="1" Grid.Column="1" 
+                        Content="Online Activation" 
+                        Style="{StaticResource ModernButtonStyle}"
+                        MinWidth="140"
+                        Margin="0,0,8,0"
+                        Click="BtnActivate_Click"/>
+
+                <Button x:Name="btnDeactivate" Grid.Row="1" Grid.Column="2" 
+                        Content="Deactivate" 
+                        Style="{StaticResource DangerButtonStyle}"
+                        MinWidth="100"
+                        Margin="0,0,8,0"
+                        Visibility="Collapsed"
+                        Click="BtnDeactivate_Click"/>
+
+                <Button x:Name="btnActivationInfo" Grid.Row="1" Grid.Column="3" 
+                        Content="Info" 
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        MinWidth="80"
+                        Visibility="Collapsed"
+                        Click="BtnActivationInfo_Click"/>
+
+                <!-- Status Information -->
+                <Label x:Name="lblActivationStatusTitle" Grid.Row="2" Grid.ColumnSpan="4" 
+                       Content="Activation Status" 
+                       Style="{StaticResource HeaderLabelStyle}" 
+                       Margin="0,16,0,0"
+                       Visibility="Collapsed"/>
+
+                <StackPanel x:Name="spActivationInfo" Grid.Row="3" Grid.ColumnSpan="4" 
+                            Margin="0,8,0,0" 
+                            Visibility="Collapsed">
+                    <Label x:Name="lblActivationTime" Content="Activation Time: --" Style="{StaticResource ModernLabelStyle}"/>
+                    <Label x:Name="lblRemainingDays" Content="Remaining Days: --" Style="{StaticResource ModernLabelStyle}"/>
+                    <Label x:Name="lblLastHeartbeat" Content="Last Heartbeat: --" Style="{StaticResource ModernLabelStyle}"/>
+                </StackPanel>
+
+                <!-- System Status -->
+                <Grid Grid.Row="4" Grid.ColumnSpan="4" Margin="0,16,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Label x:Name="lblNetworkStatus" Grid.Column="0" 
+                           Content="Network Disconnected" 
+                           Style="{StaticResource StatusLabelStyle}" 
+                           Foreground="#FFFF8C00"/>
+
+                    <Label x:Name="lblVfsStatus" Grid.Column="1" 
+                           Content="Virtual File System: Not mounted" 
+                           Style="{StaticResource StatusLabelStyle}" 
+                           Foreground="#FF6D6D6D"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- Log Section -->
+        <Border Grid.Row="3" Background="#FF3F3F46" CornerRadius="6" Padding="16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Label Grid.Row="0" Content="Activity Log" Style="{StaticResource HeaderLabelStyle}"/>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,8,0,8">
+                    <TextBox x:Name="txtActivationLog" 
+                             Background="#FF1E1E1E"
+                             Foreground="#FFDDDDDD"
+                             BorderThickness="0"
+                             FontFamily="Consolas"
+                             FontSize="11"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             MinHeight="200"
+                             Text="[00:00:00] System initializing...&#x0A;"/>
+                </ScrollViewer>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="btnClearLog" 
+                            Content="Clear Log" 
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            MinWidth="80"
+                            Margin="0,0,8,0"
+                            Click="BtnClearLog_Click"/>
+
+                    <Button x:Name="btnSaveLog" 
+                            Content="Save Log" 
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            MinWidth="80"
+                            Margin="0,0,8,0"
+                            Click="BtnSaveLog_Click"/>
+
+                    <Button x:Name="btnDiagnostic" 
+                            Content="System Diagnostic" 
+                            Style="{StaticResource ModernButtonStyle}"
+                            MinWidth="140"
+                            Click="BtnDiagnostic_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Footer Status Bar -->
+        <Border Grid.Row="4" Background="#FF474747" CornerRadius="3" Padding="12,6" Margin="0,16,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Label Grid.Column="0" 
+                       Content="Ready" 
+                       Style="{StaticResource ModernLabelStyle}" 
+                       FontSize="11"
+                       VerticalAlignment="Center"/>
+
+                <Label Grid.Column="1" 
+                       Content="© 2025 X-Plane DRM Activator" 
+                       Style="{StaticResource ModernLabelStyle}" 
+                       FontSize="10"
+                       Foreground="#FF999999"
+                       VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

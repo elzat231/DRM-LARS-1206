@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 // 使用正确的DRM.VFS命名空间
@@ -43,7 +45,7 @@ namespace XPlaneActivator.Services
         {
             try
             {
-                ReportProgress(ActivationStage.Connecting, "连接到激活服务器...");
+                ReportProgress(ActivationStage.Connecting, "Connecting to activation server...");
 
                 // 生成机器码
                 string machineCode = HardwareIdHelper.GetMachineFingerprint();
@@ -52,7 +54,7 @@ namespace XPlaneActivator.Services
                 var requestData = ServerConfig.CreateActivationRequest(activationCode, machineCode);
                 string requestJson = System.Text.Json.JsonSerializer.Serialize(requestData);
 
-                ReportProgress(ActivationStage.Validating, "发送激活请求...");
+                ReportProgress(ActivationStage.Validating, "Sending activation request...");
 
                 string response = "";
                 bool requestSuccessful = false;
@@ -65,7 +67,7 @@ namespace XPlaneActivator.Services
                 {
                     try
                     {
-                        LogMessage?.Invoke(this, $"尝试连接服务器: {serverUrl}");
+                        LogMessage?.Invoke(this, $"Trying to connect to server: {serverUrl}");
 
                         response = await networkManager.HttpPostAsync(
                             requestJson,
@@ -75,17 +77,17 @@ namespace XPlaneActivator.Services
 
                         // 如果请求成功，跳出循环
                         requestSuccessful = true;
-                        LogMessage?.Invoke(this, $"服务器连接成功: {serverUrl}");
+                        LogMessage?.Invoke(this, $"Server connection successful: {serverUrl}");
                         break;
                     }
                     catch (Exception ex)
                     {
-                        LogMessage?.Invoke(this, $"服务器 {serverUrl} 连接失败: {ex.Message}");
+                        LogMessage?.Invoke(this, $"Server {serverUrl} connection failed: {ex.Message}");
 
                         // 如果不是最后一个服务器，继续尝试下一个
                         if (serverUrl != serverUrls[serverUrls.Length - 1])
                         {
-                            LogMessage?.Invoke(this, "尝试下一个服务器...");
+                            LogMessage?.Invoke(this, "Trying next server...");
                             continue;
                         }
                     }
@@ -94,26 +96,26 @@ namespace XPlaneActivator.Services
                 // 如果所有服务器都失败了
                 if (!requestSuccessful)
                 {
-                    LogMessage?.Invoke(this, "所有服务器连接失败");
-                    return ActivationResult.Failed("无法连接到激活服务器");
+                    LogMessage?.Invoke(this, "All servers failed to connect");
+                    return ActivationResult.Failed("Unable to connect to activation server");
                 }
 
-                ReportProgress(ActivationStage.ProcessingResponse, "处理服务器响应...");
+                ReportProgress(ActivationStage.ProcessingResponse, "Processing server response...");
 
                 // 显示响应内容用于调试
-                LogMessage?.Invoke(this, $"服务器响应长度: {response?.Length ?? 0}");
+                LogMessage?.Invoke(this, $"Server response length: {response?.Length ?? 0}");
                 if (!string.IsNullOrEmpty(response))
                 {
                     string responsePreview = response.Length > 200 ? response.Substring(0, 200) + "..." : response;
-                    LogMessage?.Invoke(this, $"服务器响应预览: {responsePreview}");
+                    LogMessage?.Invoke(this, $"Server response preview: {responsePreview}");
                 }
 
                 // 验证响应格式
                 if (!ServerConfig.IsValidResponse(response))
                 {
-                    LogMessage?.Invoke(this, "服务器响应格式无效");
-                    LogMessage?.Invoke(this, $"原始响应: {response}");
-                    return ActivationResult.Failed("服务器响应格式无效");
+                    LogMessage?.Invoke(this, "Invalid server response format");
+                    LogMessage?.Invoke(this, $"Raw response: {response}");
+                    return ActivationResult.Failed("Invalid server response format");
                 }
 
                 // 检查是否是成功响应
@@ -121,7 +123,7 @@ namespace XPlaneActivator.Services
                 {
                     // 激活失败，提取错误信息
                     string errorMessage = ServerConfig.ExtractErrorMessage(response);
-                    LogMessage?.Invoke(this, $"在线激活失败: {errorMessage}");
+                    LogMessage?.Invoke(this, $"Online activation failed: {errorMessage}");
                     return ActivationResult.Failed(errorMessage);
                 }
 
@@ -133,12 +135,12 @@ namespace XPlaneActivator.Services
                 {
                     jsonDoc = System.Text.Json.JsonDocument.Parse(response);
                     root = jsonDoc.RootElement;
-                    LogMessage?.Invoke(this, "JSON解析成功");
+                    LogMessage?.Invoke(this, "JSON parsing successful");
                 }
                 catch (Exception ex)
                 {
-                    LogMessage?.Invoke(this, $"JSON解析失败: {ex.Message}");
-                    return ActivationResult.Failed("无法解析服务器响应");
+                    LogMessage?.Invoke(this, $"JSON parsing failed: {ex.Message}");
+                    return ActivationResult.Failed("Unable to parse server response");
                 }
 
                 try
@@ -146,16 +148,21 @@ namespace XPlaneActivator.Services
                     // 尝试获取令牌
                     string? serverToken = ExtractServerToken(root);
 
-                    // 处理成功的激活
+                    // 分离激活状态和VFS挂载
+                    // 1. 先保存激活状态（不管VFS是否成功）
+                    bool stateSaved = stateManager.SaveActivationState(activationCode, serverToken, vfsManager.MountPoint);
+                    LogMessage?.Invoke(this, stateSaved ? "Activation state saved" : "Failed to save activation state");
+
+                    // 2. 直接使用CryptoEngine.dll解密真实文件并挂载
                     if (!string.IsNullOrEmpty(serverToken))
                     {
-                        LogMessage?.Invoke(this, "在线激活成功，获得服务器令牌");
-                        return await ProcessServerTokenAndSave(serverToken, activationCode);
+                        LogMessage?.Invoke(this, "Online activation successful, received server token");
+                        return await ProcessRealFilesAndMount(activationCode, stateSaved, serverToken);
                     }
                     else
                     {
-                        LogMessage?.Invoke(this, "在线激活成功但未获得令牌，尝试直接使用激活码");
-                        return await ProcessActivationWithoutTokenAndSave(activationCode);
+                        LogMessage?.Invoke(this, "Online activation successful but no token received, using activation code");
+                        return await ProcessRealFilesAndMount(activationCode, stateSaved);
                     }
                 }
                 finally
@@ -165,18 +172,18 @@ namespace XPlaneActivator.Services
             }
             catch (System.TimeoutException)
             {
-                LogMessage?.Invoke(this, "网络连接超时");
-                return ActivationResult.Failed("网络连接超时");
+                LogMessage?.Invoke(this, "Network connection timeout");
+                return ActivationResult.Failed("Network connection timeout");
             }
             catch (System.Net.Http.HttpRequestException ex)
             {
-                LogMessage?.Invoke(this, $"网络错误: {ex.Message}");
-                return ActivationResult.Failed($"网络错误: {ex.Message}");
+                LogMessage?.Invoke(this, $"Network error: {ex.Message}");
+                return ActivationResult.Failed($"Network error: {ex.Message}");
             }
             catch (Exception ex)
             {
-                LogMessage?.Invoke(this, $"在线激活异常: {ex.Message}");
-                LogMessage?.Invoke(this, $"异常堆栈: {ex.StackTrace}");
+                LogMessage?.Invoke(this, $"Online activation exception: {ex.Message}");
+                LogMessage?.Invoke(this, $"Exception stack: {ex.StackTrace}");
                 return ActivationResult.Failed(ex.Message);
             }
         }
@@ -185,36 +192,224 @@ namespace XPlaneActivator.Services
         {
             try
             {
-                ReportProgress(ActivationStage.Validating, "离线验证激活码...");
+                ReportProgress(ActivationStage.Validating, "Offline activation code validation...");
 
-                byte[]? decryptedData = await Task.Run(() =>
-                    securityManager.ValidateAndDecrypt(activationCode), cancellationToken);
+                // 分离激活状态和VFS挂载
+                // 1. 先保存激活状态
+                bool stateSaved = stateManager.SaveActivationState(activationCode, null, vfsManager.MountPoint);
+                LogMessage?.Invoke(this, stateSaved ? "Activation state saved" : "Failed to save activation state");
 
-                if (decryptedData != null && decryptedData.Length > 0)
+                // 2. 直接使用CryptoEngine.dll解密真实文件并挂载
+                return await ProcessRealFilesAndMount(activationCode, stateSaved);
+            }
+            catch (Exception ex)
+            {
+                LogMessage?.Invoke(this, $"Offline activation exception: {ex.Message}");
+                return ActivationResult.Failed(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 直接使用CryptoEngine.dll解密真实文件并挂载 - 不生成任何假数据
+        /// </summary>
+        private async Task<ActivationResult> ProcessRealFilesAndMount(string activationCode, bool stateSaved, string? serverToken = null)
+        {
+            try
+            {
+                ReportProgress(ActivationStage.Decrypting, "Decrypting real encrypted files using CryptoEngine.dll...");
+
+                LogMessage?.Invoke(this, "=== REAL FILE DECRYPTION ===");
+                LogMessage?.Invoke(this, $"Using SecurityManager to decrypt actual .enc files");
+
+                Dictionary<string, byte[]>? decryptedFiles = null;
+
+                // 根据是否有服务器令牌选择解密方法
+                if (!string.IsNullOrEmpty(serverToken))
                 {
-                    ReportProgress(ActivationStage.MountingVFS, "挂载虚拟文件系统...");
-
-                    bool mounted = vfsManager.MountVirtualFileSystem(decryptedData, cancellationToken);
-                    if (mounted)
+                    LogMessage?.Invoke(this, "Attempting decryption with server token...");
+                    var tokenData = securityManager.DecryptWithToken(serverToken);
+                    if (tokenData != null)
                     {
-                        bool saved = stateManager.SaveActivationState(activationCode, null, vfsManager.MountPoint);
-                        LogMessage?.Invoke(this, "离线激活成功");
-                        return ActivationResult.Success(vfsManager.MountPoint, saved);
+                        // 如果令牌解密成功，尝试获取多文件数据
+                        decryptedFiles = securityManager.DecryptMultipleFiles();
+                        if (decryptedFiles == null || decryptedFiles.Count == 0)
+                        {
+                            // 如果多文件解密失败，使用单文件数据
+                            decryptedFiles = new Dictionary<string, byte[]>
+                            {
+                                ["primary_file.obj"] = tokenData
+                            };
+                        }
+                    }
+                }
+
+                // 如果令牌解密失败或没有令牌，使用激活码解密
+                if (decryptedFiles == null || decryptedFiles.Count == 0)
+                {
+                    LogMessage?.Invoke(this, "Attempting decryption with activation code...");
+                    var activationData = securityManager.ValidateAndDecrypt(activationCode);
+                    if (activationData != null)
+                    {
+                        // 尝试获取多文件数据
+                        decryptedFiles = securityManager.DecryptMultipleFiles();
+                        if (decryptedFiles == null || decryptedFiles.Count == 0)
+                        {
+                            // 如果多文件解密失败，使用单文件数据
+                            decryptedFiles = new Dictionary<string, byte[]>
+                            {
+                                ["primary_file.obj"] = activationData
+                            };
+                        }
+                    }
+                }
+
+                // 最后尝试直接调用多文件解密
+                if (decryptedFiles == null || decryptedFiles.Count == 0)
+                {
+                    LogMessage?.Invoke(this, "Attempting direct multi-file decryption...");
+                    decryptedFiles = securityManager.DecryptMultipleFiles();
+                }
+
+                if (decryptedFiles != null && decryptedFiles.Count > 0)
+                {
+                    long totalSize = decryptedFiles.Values.Sum(data => data.Length);
+                    LogMessage?.Invoke(this, $"✓ Successfully decrypted {decryptedFiles.Count} real files, total size: {totalSize} bytes");
+
+                    // 记录解密的真实文件
+                    LogMessage?.Invoke(this, "Real decrypted files:");
+                    foreach (var file in decryptedFiles.Take(10))
+                    {
+                        LogMessage?.Invoke(this, $"  - {file.Key}: {FormatFileSize(file.Value.Length)}");
+                    }
+                    if (decryptedFiles.Count > 10)
+                    {
+                        LogMessage?.Invoke(this, $"  ... and {decryptedFiles.Count - 10} more files");
+                    }
+
+                    // 验证解密数据的完整性
+                    bool isValid = ValidateRealDecryptedFiles(decryptedFiles);
+                    LogMessage?.Invoke(this, $"Data integrity validation: {(isValid ? "✓ PASSED" : "✗ FAILED")}");
+
+                    if (isValid)
+                    {
+                        // 尝试挂载虚拟文件系统
+                        LogMessage?.Invoke(this, "Mounting real decrypted files to virtual file system...");
+                        bool mounted = await MountRealDecryptedFiles(decryptedFiles);
+
+                        if (mounted)
+                        {
+                            LogMessage?.Invoke(this, "✓ SUCCESS: Real files decrypted and mounted");
+                            return ActivationResult.Success(vfsManager.MountPoint, stateSaved, decryptedFiles.Count, totalSize);
+                        }
+                        else
+                        {
+                            LogMessage?.Invoke(this, "✗ Real files decrypted but VFS mount failed");
+                            return ActivationResult.PartialSuccess("Real files decrypted but virtual file system mount failed", stateSaved, decryptedFiles.Count);
+                        }
                     }
                     else
                     {
-                        return ActivationResult.Failed("虚拟文件系统挂载失败");
+                        LogMessage?.Invoke(this, "✗ Real file integrity validation failed");
+                        return ActivationResult.PartialSuccess("Real files decrypted but integrity validation failed", stateSaved, decryptedFiles.Count);
                     }
                 }
                 else
                 {
-                    return ActivationResult.Failed("激活码解密失败");
+                    LogMessage?.Invoke(this, "✗ FAILED: No real files could be decrypted");
+
+                    if (stateSaved)
+                    {
+                        LogMessage?.Invoke(this, "Activation state saved, but no real files available");
+                        return ActivationResult.PartialSuccess("Activation state saved, but unable to decrypt real files", stateSaved);
+                    }
+                    else
+                    {
+                        return ActivationResult.Failed("Unable to decrypt real files");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LogMessage?.Invoke(this, $"离线激活异常: {ex.Message}");
-                return ActivationResult.Failed(ex.Message);
+                LogMessage?.Invoke(this, $"Real file processing exception: {ex.Message}");
+                return ActivationResult.PartialSuccess($"Error processing real files: {ex.Message}", stateSaved);
+            }
+        }
+
+        /// <summary>
+        /// 验证真实解密文件的完整性
+        /// </summary>
+        private bool ValidateRealDecryptedFiles(Dictionary<string, byte[]> decryptedFiles)
+        {
+            try
+            {
+                LogMessage?.Invoke(this, $"Validating {decryptedFiles.Count} real decrypted files...");
+
+                int validFiles = 0;
+                foreach (var file in decryptedFiles)
+                {
+                    if (file.Value != null && file.Value.Length > 0)
+                    {
+                        // 使用SecurityManager的验证方法
+                        bool isValid = securityManager.ValidateDecryptedData(file.Value);
+                        if (isValid)
+                        {
+                            validFiles++;
+                            LogMessage?.Invoke(this, $"✓ Valid real file: {file.Key} ({file.Value.Length} bytes)");
+                        }
+                        else
+                        {
+                            LogMessage?.Invoke(this, $"⚠ Invalid real file: {file.Key}");
+                        }
+                    }
+                }
+
+                bool overallValid = validFiles > 0;
+                LogMessage?.Invoke(this, $"Real file validation result: {validFiles}/{decryptedFiles.Count} files valid");
+                return overallValid;
+            }
+            catch (Exception ex)
+            {
+                LogMessage?.Invoke(this, $"Real file validation exception: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 挂载真实解密的文件到VFS
+        /// </summary>
+        private async Task<bool> MountRealDecryptedFiles(Dictionary<string, byte[]> decryptedFiles, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                LogMessage?.Invoke(this, "Starting real file virtual file system...");
+                ReportProgress(ActivationStage.MountingVFS, $"Mounting {decryptedFiles.Count} real decrypted files...");
+
+                // 直接设置真实解密的文件到VFS
+                vfsManager.SetVirtualFiles(decryptedFiles);
+
+                long totalSize = decryptedFiles.Values.Sum(data => data.Length);
+                LogMessage?.Invoke(this, $"Set {decryptedFiles.Count} real files to VFS, total size: {totalSize} bytes");
+
+                // 尝试挂载
+                bool mounted = await vfsManager.MountAsync(cancellationToken);
+
+                if (mounted)
+                {
+                    LogMessage?.Invoke(this, $"✓ Real files successfully mounted to {vfsManager.MountPoint}");
+                    LogMessage?.Invoke(this, $"Mounted: {vfsManager.FileCount} real files, total size: {FormatFileSize(vfsManager.TotalSize)}");
+                    ReportProgress(ActivationStage.Complete, "Real file VFS mount successful");
+                    return true;
+                }
+                else
+                {
+                    LogMessage?.Invoke(this, "✗ Real file virtual file system mount failed");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage?.Invoke(this, $"Real file virtual file system mount exception: {ex.Message}");
+                return false;
             }
         }
 
@@ -222,20 +417,30 @@ namespace XPlaneActivator.Services
         {
             try
             {
-                ReportProgress(ActivationStage.Deactivating, "取消激活...");
+                ReportProgress(ActivationStage.Deactivating, "Deactivating...");
 
-                // 清除激活状态
+                // 1. 清除激活状态
                 stateManager.ClearActivationState();
+                LogMessage?.Invoke(this, "Activation state cleared");
 
-                // 卸载虚拟文件系统
-                vfsManager.UnmountVirtualFileSystem();
+                // 2. 卸载虚拟文件系统（独立操作）
+                try
+                {
+                    bool unmounted = await vfsManager.UnmountAsync();
+                    LogMessage?.Invoke(this, unmounted ? "VFS unmounted successfully" : "VFS unmount failed");
+                }
+                catch (Exception ex)
+                {
+                    LogMessage?.Invoke(this, $"VFS unmount exception: {ex.Message}");
+                    // VFS卸载失败不影响激活状态清除
+                }
 
-                LogMessage?.Invoke(this, "取消激活成功");
+                LogMessage?.Invoke(this, "Deactivation completed");
                 return true;
             }
             catch (Exception ex)
             {
-                LogMessage?.Invoke(this, $"取消激活失败: {ex.Message}");
+                LogMessage?.Invoke(this, $"Deactivation failed: {ex.Message}");
                 return false;
             }
         }
@@ -245,32 +450,42 @@ namespace XPlaneActivator.Services
             try
             {
                 var savedState = stateManager.GetCurrentState();
-                if (savedState == null) return false;
+                if (savedState == null)
+                {
+                    LogMessage?.Invoke(this, "No saved activation state found");
+                    return false;
+                }
+
+                LogMessage?.Invoke(this, "Found saved activation state, validating...");
 
                 if (stateManager.ShouldRevalidate())
                 {
-                    // 执行重新验证
-                    if (!string.IsNullOrEmpty(savedState.ServerToken))
+                    LogMessage?.Invoke(this, "Need to revalidate activation state");
+
+                    // 执行重新验证 - 使用真实文件解密验证
+                    if (!string.IsNullOrEmpty(savedState.ActivationCode))
                     {
-                        // 在线重新验证
-                        LogMessage?.Invoke(this, "执行在线重新验证...");
-                        await Task.Delay(100); // 模拟验证过程
-                        return true; // 简化处理
-                    }
-                    else if (!string.IsNullOrEmpty(savedState.ActivationCode))
-                    {
-                        // 离线重新验证
-                        LogMessage?.Invoke(this, "执行离线重新验证...");
-                        byte[]? data = await Task.Run(() =>
-                            securityManager.ValidateAndDecrypt(savedState.ActivationCode));
-                        return data != null && data.Length > 0;
+                        LogMessage?.Invoke(this, "Performing revalidation using real file decryption...");
+                        var decryptedFiles = securityManager.DecryptMultipleFiles();
+
+                        bool isValid = decryptedFiles != null && decryptedFiles.Count > 0;
+                        LogMessage?.Invoke(this, isValid ? "✓ Revalidation successful - real files decrypted" : "✗ Revalidation failed - cannot decrypt real files");
+
+                        if (isValid)
+                        {
+                            stateManager.UpdateHeartbeat();
+                        }
+
+                        return isValid;
                     }
                 }
 
+                LogMessage?.Invoke(this, "Activation state validation passed");
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                LogMessage?.Invoke(this, $"Activation state validation exception: {ex.Message}");
                 return false;
             }
         }
@@ -293,7 +508,7 @@ namespace XPlaneActivator.Services
         {
             try
             {
-                LogMessage?.Invoke(this, "提取服务器令牌...");
+                LogMessage?.Invoke(this, "Extracting server token...");
 
                 // 扩展的令牌字段名列表
                 var tokenProperties = new[] {
@@ -309,7 +524,7 @@ namespace XPlaneActivator.Services
                         string? token = tokenProp.GetString();
                         if (!string.IsNullOrWhiteSpace(token))
                         {
-                            LogMessage?.Invoke(this, $"找到令牌字段: {prop}, 长度: {token.Length}");
+                            LogMessage?.Invoke(this, $"Found token field: {prop}, length: {token.Length}");
                             return token;
                         }
                     }
@@ -318,7 +533,7 @@ namespace XPlaneActivator.Services
                 // 检查嵌套的data字段
                 if (root.TryGetProperty("data", out var dataProp))
                 {
-                    LogMessage?.Invoke(this, "检查嵌套的data字段...");
+                    LogMessage?.Invoke(this, "Checking nested data field...");
                     foreach (var prop in tokenProperties)
                     {
                         if (dataProp.TryGetProperty(prop, out var dataTokenProp))
@@ -326,7 +541,7 @@ namespace XPlaneActivator.Services
                             string? token = dataTokenProp.GetString();
                             if (!string.IsNullOrWhiteSpace(token))
                             {
-                                LogMessage?.Invoke(this, $"在data字段中找到令牌: {prop}, 长度: {token.Length}");
+                                LogMessage?.Invoke(this, $"Found token in data field: {prop}, length: {token.Length}");
                                 return token;
                             }
                         }
@@ -336,7 +551,7 @@ namespace XPlaneActivator.Services
                 // 检查payload字段
                 if (root.TryGetProperty("payload", out var payloadProp))
                 {
-                    LogMessage?.Invoke(this, "检查payload字段...");
+                    LogMessage?.Invoke(this, "Checking payload field...");
                     foreach (var prop in tokenProperties)
                     {
                         if (payloadProp.TryGetProperty(prop, out var payloadTokenProp))
@@ -344,7 +559,7 @@ namespace XPlaneActivator.Services
                             string? token = payloadTokenProp.GetString();
                             if (!string.IsNullOrWhiteSpace(token))
                             {
-                                LogMessage?.Invoke(this, $"在payload字段中找到令牌: {prop}, 长度: {token.Length}");
+                                LogMessage?.Invoke(this, $"Found token in payload field: {prop}, length: {token.Length}");
                                 return token;
                             }
                         }
@@ -352,7 +567,7 @@ namespace XPlaneActivator.Services
                 }
 
                 // 如果仍然找不到，记录所有可用字段
-                LogMessage?.Invoke(this, "未找到标准令牌字段，响应结构:");
+                LogMessage?.Invoke(this, "No standard token field found, response structure:");
                 LogResponseStructure(root, "", 0);
 
                 // 尝试使用任何看起来像令牌的长字符串字段
@@ -363,7 +578,7 @@ namespace XPlaneActivator.Services
                         string? value = property.Value.GetString();
                         if (!string.IsNullOrWhiteSpace(value) && value.Length > 50)
                         {
-                            LogMessage?.Invoke(this, $"发现可能的令牌字段: {property.Name}, 长度: {value.Length}");
+                            LogMessage?.Invoke(this, $"Found possible token field: {property.Name}, length: {value.Length}");
                             return value;
                         }
                     }
@@ -373,7 +588,7 @@ namespace XPlaneActivator.Services
             }
             catch (Exception ex)
             {
-                LogMessage?.Invoke(this, $"提取令牌时异常: {ex.Message}");
+                LogMessage?.Invoke(this, $"Exception extracting token: {ex.Message}");
                 return null;
             }
         }
@@ -394,7 +609,7 @@ namespace XPlaneActivator.Services
                     case System.Text.Json.JsonValueKind.String:
                         string? stringValue = property.Value.GetString();
                         int length = stringValue?.Length ?? 0;
-                        LogMessage?.Invoke(this, $"  {fullPath}: String (长度: {length})");
+                        LogMessage?.Invoke(this, $"  {fullPath}: String (length: {length})");
                         break;
                     case System.Text.Json.JsonValueKind.Object:
                         LogMessage?.Invoke(this, $"  {fullPath}: Object");
@@ -411,230 +626,23 @@ namespace XPlaneActivator.Services
         }
 
         /// <summary>
-        /// 处理服务器令牌并保存（增强版本）
+        /// 格式化文件大小显示
         /// </summary>
-        private async Task<ActivationResult> ProcessServerTokenAndSave(string serverToken, string activationCode)
+        private string FormatFileSize(long bytes)
         {
-            try
+            string[] sizes = { "B", "KB", "MB", "GB" };
+            double len = bytes;
+            int order = 0;
+            while (len >= 1024 && order < sizes.Length - 1)
             {
-                ReportProgress(ActivationStage.Decrypting, "使用服务器令牌解密数据...");
-
-                // 增加令牌信息调试
-                LogMessage?.Invoke(this, $"处理服务器令牌，长度: {serverToken?.Length ?? 0}");
-
-                if (string.IsNullOrWhiteSpace(serverToken))
-                {
-                    LogMessage?.Invoke(this, "服务器令牌为空");
-                    return ActivationResult.Failed("服务器令牌为空");
-                }
-
-                // 显示令牌预览（用于调试）
-                string tokenPreview = serverToken.Length > 50
-                    ? serverToken.Substring(0, 50) + "..."
-                    : serverToken;
-                LogMessage?.Invoke(this, $"令牌预览: {tokenPreview}");
-
-                byte[]? decryptedData = await Task.Run(() =>
-                {
-                    try
-                    {
-                        LogMessage?.Invoke(this, "调用 SecurityManager.DecryptWithToken...");
-                        var result = securityManager.DecryptWithToken(serverToken);
-
-                        if (result == null)
-                        {
-                            LogMessage?.Invoke(this, "SecurityManager.DecryptWithToken 返回 null");
-                        }
-                        else
-                        {
-                            LogMessage?.Invoke(this, $"SecurityManager.DecryptWithToken 返回 {result.Length} 字节");
-                        }
-
-                        return result;
-                    }
-                    catch (Exception ex)
-                    {
-                        LogMessage?.Invoke(this, $"DecryptWithToken 异常: {ex.Message}");
-                        return null;
-                    }
-                });
-
-                if (decryptedData != null && decryptedData.Length > 0)
-                {
-                    LogMessage?.Invoke(this, $"数据解密成功，大小: {decryptedData.Length} 字节");
-
-                    // 验证解密数据完整性
-                    LogMessage?.Invoke(this, "验证数据完整性...");
-                    string content = System.Text.Encoding.UTF8.GetString(decryptedData);
-
-                    // 显示内容预览
-                    string contentPreview = content.Length > 200
-                        ? content.Substring(0, 200) + "..."
-                        : content;
-                    LogMessage?.Invoke(this, $"解密内容预览: {contentPreview}");
-
-                    // 检查OBJ文件标识
-                    bool hasObjHeader = content.Contains("# X-Plane") || content.Contains("# Object");
-                    bool hasVertices = content.Contains("v ");
-                    bool hasFaces = content.Contains("f ");
-
-                    LogMessage?.Invoke(this, $"完整性检查 - Header: {hasObjHeader}, Vertices: {hasVertices}, Faces: {hasFaces}");
-
-                    if (hasObjHeader && (hasVertices || hasFaces))
-                    {
-                        LogMessage?.Invoke(this, "数据完整性验证通过");
-
-                        // 挂载虚拟文件系统
-                        LogMessage?.Invoke(this, "开始挂载虚拟文件系统...");
-                        bool mounted = await MountVirtualFileSystem(decryptedData);
-
-                        if (mounted)
-                        {
-                            // 保存激活状态
-                            bool saved = stateManager.SaveActivationState(activationCode, serverToken, vfsManager.MountPoint);
-                            if (saved)
-                            {
-                                LogMessage?.Invoke(this, "激活状态已保存");
-                            }
-                            else
-                            {
-                                LogMessage?.Invoke(this, "激活状态保存失败，但虚拟文件系统已挂载");
-                            }
-                            return ActivationResult.Success(vfsManager.MountPoint, saved);
-                        }
-                        else
-                        {
-                            LogMessage?.Invoke(this, "虚拟文件系统挂载失败");
-                            return ActivationResult.Failed("虚拟文件系统挂载失败");
-                        }
-                    }
-                    else
-                    {
-                        LogMessage?.Invoke(this, "数据完整性验证失败 - 不是有效的OBJ文件格式");
-
-                        // 如果令牌解密失败，尝试使用激活码
-                        LogMessage?.Invoke(this, "尝试使用激活码进行离线解密...");
-                        return await ProcessActivationWithoutTokenAndSave(activationCode);
-                    }
-                }
-                else
-                {
-                    LogMessage?.Invoke(this, "令牌解密失败 - 返回数据为空");
-
-                    // 如果令牌解密失败，尝试使用激活码
-                    LogMessage?.Invoke(this, "尝试使用激活码进行离线解密...");
-                    return await ProcessActivationWithoutTokenAndSave(activationCode);
-                }
+                order++;
+                len = len / 1024;
             }
-            catch (Exception ex)
-            {
-                LogMessage?.Invoke(this, $"处理服务器令牌异常: {ex.Message}");
-                LogMessage?.Invoke(this, $"异常堆栈: {ex.StackTrace}");
-
-                // 发生异常时也尝试离线激活
-                LogMessage?.Invoke(this, "异常情况下尝试离线激活...");
-                try
-                {
-                    return await ProcessActivationWithoutTokenAndSave(activationCode);
-                }
-                catch (Exception fallbackEx)
-                {
-                    LogMessage?.Invoke(this, $"离线激活也失败: {fallbackEx.Message}");
-                    return ActivationResult.Failed($"处理服务器令牌时出错: {ex.Message}");
-                }
-            }
-        }
-
-        private async Task<ActivationResult> ProcessActivationWithoutTokenAndSave(string activationCode)
-        {
-            try
-            {
-                ReportProgress(ActivationStage.Decrypting, "使用激活码解密数据...");
-
-                byte[]? decryptedData = await Task.Run(() => securityManager.ValidateAndDecrypt(activationCode));
-
-                if (decryptedData != null && decryptedData.Length > 0)
-                {
-                    LogMessage?.Invoke(this, $"数据解密成功，大小: {decryptedData.Length} 字节");
-
-                    // 验证解密数据完整性
-                    if (securityManager.ValidateDecryptedData(decryptedData))
-                    {
-                        LogMessage?.Invoke(this, "数据完整性验证通过");
-
-                        // 挂载虚拟文件系统
-                        bool mounted = await MountVirtualFileSystem(decryptedData);
-
-                        if (mounted)
-                        {
-                            // 保存激活状态
-                            bool saved = stateManager.SaveActivationState(activationCode, null, vfsManager.MountPoint);
-                            if (saved)
-                            {
-                                LogMessage?.Invoke(this, "激活状态已保存");
-                            }
-                            else
-                            {
-                                LogMessage?.Invoke(this, "激活状态保存失败");
-                            }
-                            return ActivationResult.Success(vfsManager.MountPoint, saved);
-                        }
-                        return ActivationResult.Failed("虚拟文件系统挂载失败");
-                    }
-                    else
-                    {
-                        LogMessage?.Invoke(this, "数据完整性验证失败");
-                        return ActivationResult.Failed("数据完整性验证失败");
-                    }
-                }
-                else
-                {
-                    LogMessage?.Invoke(this, "激活码解密失败");
-                    return ActivationResult.Failed("激活码解密失败");
-                }
-            }
-            catch (Exception ex)
-            {
-                return ActivationResult.Failed($"处理激活码时出错: {ex.Message}");
-            }
-        }
-
-        private async Task<bool> MountVirtualFileSystem(byte[] decryptedData)
-        {
-            try
-            {
-                LogMessage?.Invoke(this, "启动虚拟文件系统...");
-                ReportProgress(ActivationStage.MountingVFS, "挂载虚拟文件系统...");
-
-                // 使用固定的VFS管理器，正确等待挂载完成
-                bool mounted = await Task.Run(() =>
-                    vfsManager.MountVirtualFileSystem(
-                        decryptedData,
-                        CancellationToken.None
-                    )
-                );
-
-                if (mounted)
-                {
-                    LogMessage?.Invoke(this, $"虚拟文件系统成功挂载到 {vfsManager.MountPoint}");
-                    ReportProgress(ActivationStage.Complete, "激活成功");
-                    return true;
-                }
-                else
-                {
-                    LogMessage?.Invoke(this, "虚拟文件系统挂载失败");
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                LogMessage?.Invoke(this, $"虚拟文件系统挂载异常: {ex.Message}");
-                return false;
-            }
+            return $"{len:0.##} {sizes[order]}";
         }
     }
 
-    // 支持类
+    // 支持类保持不变
     public enum ActivationStage
     {
         Connecting,
@@ -663,19 +671,37 @@ namespace XPlaneActivator.Services
     public class ActivationResult
     {
         public bool IsSuccess { get; private set; }
+        public bool IsPartialSuccess { get; private set; }
         public string? MountPoint { get; private set; }
         public bool StateSaved { get; private set; }
         public string? ErrorMessage { get; private set; }
+        public int FileCount { get; private set; }
+        public long TotalSize { get; private set; }
 
         private ActivationResult() { }
 
-        public static ActivationResult Success(string mountPoint, bool stateSaved)
+        public static ActivationResult Success(string mountPoint, bool stateSaved, int fileCount = 0, long totalSize = 0)
         {
             return new ActivationResult
             {
                 IsSuccess = true,
+                IsPartialSuccess = false,
                 MountPoint = mountPoint,
-                StateSaved = stateSaved
+                StateSaved = stateSaved,
+                FileCount = fileCount,
+                TotalSize = totalSize
+            };
+        }
+
+        public static ActivationResult PartialSuccess(string errorMessage, bool stateSaved, int fileCount = 0)
+        {
+            return new ActivationResult
+            {
+                IsSuccess = false,
+                IsPartialSuccess = true,
+                StateSaved = stateSaved,
+                ErrorMessage = errorMessage,
+                FileCount = fileCount
             };
         }
 
@@ -684,7 +710,11 @@ namespace XPlaneActivator.Services
             return new ActivationResult
             {
                 IsSuccess = false,
-                ErrorMessage = errorMessage
+                IsPartialSuccess = false,
+                StateSaved = false,
+                ErrorMessage = errorMessage,
+                FileCount = 0,
+                TotalSize = 0
             };
         }
     }

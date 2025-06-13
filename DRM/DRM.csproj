@@ -6,7 +6,13 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PackageIcon>B777X_L.A.R.S_LOGO_with_background (13).png</PackageIcon>
+    <ApplicationIcon>B777X_L.A.R.S_LOGO_with_background (1).ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="B777X_L.A.R.S_LOGO_with_background (1).ico" />
+  </ItemGroup>
 
   <ItemGroup>
 
@@ -24,6 +30,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\..\..\Downloads\B777X_L.A.R.S_LOGO_with_background (13).png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
     <None Include="app.manifest" />
   </ItemGroup>
 

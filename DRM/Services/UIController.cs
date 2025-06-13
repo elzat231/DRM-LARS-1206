@@ -55,7 +55,7 @@ namespace XPlaneActivator.Services
                     }
 
                     // Update VFS status
-                    mainWindow.lblVfsStatus.Text = $"Virtual File System mounted to {state.MountPoint}";
+                    mainWindow.lblVfsStatus.Content = $"Virtual File System mounted to {state.MountPoint}";
                     mainWindow.lblVfsStatus.Foreground = new SolidColorBrush(Colors.LightGreen);
 
                     // Show activation status information - Fixed with null checking
@@ -71,12 +71,12 @@ namespace XPlaneActivator.Services
                         // Update activation details with null checking
                         if (mainWindow.lblActivationTime != null)
                         {
-                            mainWindow.lblActivationTime.Text = $"Activation Time: {state.ActivationTime:yyyy-MM-dd HH:mm:ss}";
+                            mainWindow.lblActivationTime.Content = $"Activation Time: {state.ActivationTime:yyyy-MM-dd HH:mm:ss}";
                         }
 
                         if (mainWindow.lblRemainingDays != null)
                         {
-                            mainWindow.lblRemainingDays.Text = $"Remaining Days: {remainingDays} days";
+                            mainWindow.lblRemainingDays.Content = $"Remaining Days: {remainingDays} days";
                         }
 
                         if (mainWindow.lblLastHeartbeat != null)
@@ -85,7 +85,7 @@ namespace XPlaneActivator.Services
                             string heartbeatText = timeSinceHeartbeat.TotalMinutes < 1
                                 ? "Last Heartbeat: Just now"
                                 : $"Last Heartbeat: {(int)timeSinceHeartbeat.TotalMinutes} minutes ago";
-                            mainWindow.lblLastHeartbeat.Text = heartbeatText;
+                            mainWindow.lblLastHeartbeat.Content = heartbeatText;
                         }
                     }
                 }
@@ -114,7 +114,7 @@ namespace XPlaneActivator.Services
                     }
 
                     // Update VFS status
-                    mainWindow.lblVfsStatus.Text = "Virtual File System not mounted";
+                    mainWindow.lblVfsStatus.Content = "Virtual File System not mounted";
                     mainWindow.lblVfsStatus.Foreground = new SolidColorBrush(Colors.Gray);
 
                     // Hide activation status information
@@ -135,7 +135,7 @@ namespace XPlaneActivator.Services
         {
             mainWindow.Dispatcher.Invoke(() =>
             {
-                mainWindow.lblStatus.Text = status;
+                mainWindow.lblStatus.Content = status;
             });
         }
 
